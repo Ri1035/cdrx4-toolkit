@@ -68,7 +68,8 @@ cdrx4-toolkit/
 │  ├─ M_Seal.bas              ← 印章制作
 │  └─ M_Test.bas              ← 自检：跑 9 个功能并写日志，供冒烟测试判成败
 ├─ tools/                     ← 开发/验证脚本（不参与运行，可删）
-│  └─ smoke.vbs               ← 冒烟测试：重启 X4，验工程 / 工具栏 / 9 个功能
+│  ├─ smoke.vbs               ← 冒烟测试：重启 X4，验工程 / 工具栏 / 9 个功能
+│  └─ probe*.vbs              ← X4 对象模型探针（当初用来核对 API，已归档）
 ├─ build_gms.vbs              ← 用 src/ 里的源码生成 GMS（需本机装 X4）
 ├─ installer_template.txt     ← 一键安装器的模板（纯 ASCII）
 ├─ installer_msgs.txt         ← 安装器弹窗里的中文文案（UTF-8，一行一条）
