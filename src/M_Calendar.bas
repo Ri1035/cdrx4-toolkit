@@ -2,9 +2,9 @@ Attribute VB_Name = "M_Calendar"
 Option Explicit
 
 '==========================================================
-' ????????
-'   ???????????????????????????????? + ?????? + ?????
-'   ???????????????????????????
+' 日历创建
+'   输入 2026-09，生成该月的文字日历
+'   内容：年 + 月标题 + 星期表头 + 日期数字
 '==========================================================
 
 Public Sub CreateCalendar()
@@ -31,19 +31,19 @@ Public Sub CreateCalendar()
 
     If Not HasDocument() Then Exit Sub
 
-    s = InputBox("??????????????? 2026-09", "????????", Format$(Date, "yyyy-mm"))
+    s = InputBox("输入要生成的年月，例如 2026-09", "日历创建", Format$(Date, "yyyy-mm"))
     If Len(s) = 0 Then Exit Sub
 
     parts = Split(s, "-")
     If UBound(parts) < 1 Then
-        MsgBox "???????????? 2026-09??", vbExclamation, "????????"
+        MsgBox "格式不对，应该像 2026-09 这样。", vbExclamation, "日历创建"
         Exit Sub
     End If
 
     y = Val(parts(0))
     m = Val(parts(1))
     If y < 1900 Or y > 2200 Or m < 1 Or m > 12 Then
-        MsgBox "???2??????", vbExclamation, "????????"
+        MsgBox "年份或月份超出范围了。", vbExclamation, "日历创建"
         Exit Sub
     End If
 
@@ -64,20 +64,20 @@ Public Sub CreateCalendar()
     x0 = 20
     yTop = h - 20
 
-    wd = Array("?", "??", "??", "??", "??", "??", "??")
+    wd = Array("一", "二", "三", "四", "五", "六", "日")
 
     Optimization = True
-    doc.BeginCommandGroup "????????"
+    doc.BeginCommandGroup "日历创建"
 
-    ' ????
-    AddText lay, x0 + cw * 3, yTop, y & " ?? " & m & " ??", 16
+    ' 标题
+    AddText lay, x0 + cw * 3, yTop, y & " 年 " & m & " 月", 16
 
-    ' ??????
+    ' 星期表头
     For i = 0 To 6
         AddText lay, x0 + cw * i + cw / 2, yTop - 12, wd(i), 11
     Next i
 
-    ' ????
+    ' 日期
     For i = 1 To days
         col = (startCol + i - 1) Mod 7
         row = (startCol + i - 1) \ 7
@@ -96,7 +96,7 @@ Private Sub AddText(ByVal lay As Layer, ByVal x As Double, ByVal y As Double, _
     On Error Resume Next
     Set t = lay.CreateArtisticTextWide(x, y, txt)
     If Not t Is Nothing Then
-        t.Text.Story.Font = "????"
+        t.Text.Story.Font = "微软雅黑"
         t.Text.Story.Size = sz
         t.Text.Story.Alignment = cdrCenterAlignment
         t.SetPosition x, y

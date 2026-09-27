@@ -2,8 +2,8 @@ Attribute VB_Name = "M_PageNo"
 Option Explicit
 
 '==========================================================
-' ???????
-'   ???????????????? X ? / ?? Y ???
+' 插入页码
+'   为每一页在底部居中插入「第 X 页 / 共 Y 页」
 '==========================================================
 
 Public Sub InsertPageNumber()
@@ -21,7 +21,7 @@ Public Sub InsertPageNumber()
     n = doc.Pages.Count
 
     Optimization = True
-    doc.BeginCommandGroup "???????"
+    doc.BeginCommandGroup "插入页码"
 
     For i = 1 To n
         Set pg = doc.Pages(i)
@@ -29,13 +29,13 @@ Public Sub InsertPageNumber()
         If w <= 0 Then w = 210
         If h <= 0 Then h = 297
 
-        txt = "?? " & i & " ? / ?? " & n & " ?"
+        txt = "第 " & i & " 页 / 共 " & n & " 页"
 
         Set s = Nothing
         On Error Resume Next
         Set s = pg.ActiveLayer.CreateArtisticTextWide(w / 2, h - 8, txt)
         If Not s Is Nothing Then
-            s.Text.Story.Font = "????"
+            s.Text.Story.Font = "微软雅黑"
             s.Text.Story.Size = 9
             s.Text.Story.Alignment = cdrCenterAlignment
             s.SetPosition w / 2, h - 8
