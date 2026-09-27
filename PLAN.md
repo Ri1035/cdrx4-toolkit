@@ -246,10 +246,20 @@ X4 内存里已经有一份 CDRX4Toolkit 工程**。旧 `build_gms.vbs` 直接
 ### 还没做的
 
 - 视觉验收：自动化只证明「不报错、处理了对象」，圆/五角星/日历文字的**对齐与间距**需要人在 CDR 里看一眼
-- 推 GitHub：**等用户确认**（用户要求先做本地）
+
+## 9. 发布记录
+
+| 日期 | 事件 | 说明 |
+|---|---|---|
+| 2026-09-27 | 首次推送 GitHub | 仓库 `Ri1035/cdrx4-toolkit` 建立（MIT），推的是 v1.0.1 时代的旧文件 |
+| 2026-09-28 | **v1.0.2 全量推送** | commit `5934c04`，42 个文件 / 493911 字节：`src/` 12 模块、`tools/` 冒烟+20 个探针、`dist/安装CDRX4增强工具.vbs`、`README.md`、`PLAN.md`、构建脚本 |
+| 2026-09-28 | 文档补丁 | commit `e469ceb`，README 目录树补上 `tools/probe*.vbs`（仓库有、文档漏列） |
+
+推送方式：本机 **没有 git CLI**，走 GitHub git-data API（blobs → tree → commit → PATCH ref）。
+大文件（安装器 216KB）先读字节再 base64，body 全部手工转义成纯 ASCII，避免 PowerShell 编码踩坑。
 
 ### 本地交付位置
 
 - 工作副本：`c:\Users\Administrator\Desktop\Trae\6ab8d877d5fe7a26dc6b47cf\cdrx4-toolkit`
-- 交付副本：`C:\Users\Administrator\Desktop\CDR\cdrx4-toolkit`
+- 交付副本：`C:\Users\Administrator\Desktop\CDR\cdrx4-toolkit`（43 个文件，与工作副本逐文件 SHA-256 一致）
 - 发给别人只需一个文件：`dist\安装CDRX4增强工具.vbs`
