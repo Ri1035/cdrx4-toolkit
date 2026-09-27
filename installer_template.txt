@@ -1,0 +1,190 @@
+@@OUT:安装CDRX4增强工具.vbs@@
+Option Explicit
+
+'============================================================
+'  CDR X4 Toolkit - one-click installer
+'
+'  Usage: double-click this file. It finds the CorelDRAW X4
+'  user GMS folder, writes CDRX4Toolkit.gms into it, and then
+'  tells you what to do next. Restart CorelDRAW once and the
+'  toolbar shows up.
+'
+'  Uninstall: delete CDRX4Toolkit.gms from that folder and
+'  restart CorelDRAW.
+'
+'  WHY THIS FILE IS ASCII-ONLY
+'  Windows Script Host reads .vbs as ANSI, so a Chinese literal
+'  stored as UTF-8 (which is what happens when the file is
+'  downloaded from GitHub) gets mis-decoded - and because a
+'  mis-decoded multi-byte sequence can swallow the closing
+'  quote, it can even be a syntax error. So all Chinese text
+'  lives in MSG_B64 below: a base64 UTF-8 blob decoded at run
+'  time. The script then behaves the same whatever encoding the
+'  file happens to be saved or transferred in.
+'============================================================
+
+Const GMS_NAME = "CDRX4Toolkit.gms"
+
+' embedded plugin payload (CDRX4Toolkit.gms, base64)
+Dim B64
+B64 = "" & _
+@@B64CHUNKS@@
+
+' embedded UI messages (UTF-8 text, base64, one message per line)
+Dim MSG_B64
+MSG_B64 = "" & _
+@@MSGB64CHUNKS@@
+
+Dim M
+Call Main()
+
+
+Sub Main()
+    Dim fso, sh, appData, corelRoot, list(60), n, i, dst, okCount, msg, data, sub_
+    Dim TB, text
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set sh  = CreateObject("WScript.Shell")
+    LoadMessages
+    TB = M(0)
+
+    appData   = sh.ExpandEnvironmentStrings("%APPDATA%")
+    corelRoot = appData & "\Corel"
+
+    ' ---- 1. collect every CorelDRAW X4 GMS folder ----
+    n = 0
+    If fso.FolderExists(corelRoot) Then
+        n = AddDir(fso, list, n, corelRoot & "\CorelDRAW Graphics Suite X4\User Draw\GMS")
+        On Error Resume Next
+        For Each sub_ In fso.GetFolder(corelRoot).SubFolders
+            ' X4 only, so other versions are left alone
+            If InStr(1, sub_.Name, "X4", vbTextCompare) > 0 Then
+                n = AddDir(fso, list, n, sub_.Path & "\User Draw\GMS")
+                n = AddDir(fso, list, n, sub_.Path & "\Draw\GMS")
+            End If
+        Next
+        Err.Clear
+        On Error GoTo 0
+    End If
+
+    ' nothing found: create the standard X4 folder
+    If n = 0 Then
+        dst = corelRoot & "\CorelDRAW Graphics Suite X4\User Draw"
+        On Error Resume Next
+        If Not fso.FolderExists(dst) Then fso.CreateFolder dst
+        If Not fso.FolderExists(dst & "\GMS") Then fso.CreateFolder dst & "\GMS"
+        Err.Clear
+        On Error GoTo 0
+        If fso.FolderExists(dst & "\GMS") Then
+            list(0) = dst & "\GMS"
+            n = 1
+        End If
+    End If
+
+    If n = 0 Then
+        MsgBox Fmt(M(1)), vbExclamation, TB
+        Exit Sub
+    End If
+
+    ' ---- 2. write the plugin ----
+    data = DecodeB64(B64)
+
+    okCount = 0
+    msg = ""
+    For i = 0 To n - 1
+        dst = list(i) & "\" & GMS_NAME
+        If WriteBin(fso, dst, data) Then
+            okCount = okCount + 1
+            msg = msg & "  " & M(4) & " " & list(i) & vbCrLf
+        Else
+            msg = msg & "  " & M(5) & " " & list(i) & vbCrLf
+        End If
+    Next
+
+    ' ---- 3. report ----
+    If okCount > 0 Then
+        text = Fill(M(2), "{N}", CStr(okCount))
+        text = Fill(text, "{LIST}", msg)
+        text = Fill(text, "{TB}", TB)
+        MsgBox Fmt(text), vbInformation, TB
+    Else
+        text = Fill(M(3), "{LIST}", msg)
+        MsgBox Fmt(text), vbExclamation, TB
+    End If
+End Sub
+
+
+' add an existing GMS folder to the list (deduplicated)
+Function AddDir(fso, list, n, p)
+    Dim i
+    AddDir = n
+    If Not fso.FolderExists(p) Then Exit Function
+    For i = 0 To n - 1
+        If LCase(list(i)) = LCase(p) Then Exit Function
+    Next
+    list(n) = p
+    AddDir = n + 1
+End Function
+
+
+' write a binary file
+Function WriteBin(fso, path, data)
+    Dim st
+    WriteBin = False
+    On Error Resume Next
+    Err.Clear
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 1
+    st.Open
+    st.Write data
+    st.SaveToFile path, 2
+    st.Close
+    If Err.Number = 0 Then WriteBin = True
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+' base64 -> byte array
+Function DecodeB64(s)
+    Dim doc, el
+    Set doc = CreateObject("MSXML2.DOMDocument")
+    Set el = doc.createElement("b")
+    el.dataType = "bin.base64"
+    el.text = s
+    DecodeB64 = el.nodeTypedValue
+End Function
+
+
+Sub LoadMessages()
+    Dim s
+    s = Utf8FromB64(MSG_B64)
+    s = Replace(s, vbCrLf, vbLf)
+    M = Split(s, vbLf)
+End Sub
+
+
+' base64 -> UTF-8 bytes -> Unicode string
+Function Utf8FromB64(b64)
+    Dim st
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 1
+    st.Open
+    st.Write DecodeB64(b64)
+    st.Position = 0
+    st.Type = 2
+    st.Charset = "utf-8"
+    Utf8FromB64 = st.ReadText
+    st.Close
+End Function
+
+
+' "\n" in the message file -> real line break
+Function Fmt(s)
+    Fmt = Replace(s, "\n", vbCrLf)
+End Function
+
+
+Function Fill(s, k, v)
+    Fill = Replace(s, k, v)
+End Function

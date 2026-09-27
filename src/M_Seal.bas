@@ -1,0 +1,110 @@
+Attribute VB_Name = "M_Seal"
+Option Explicit
+
+'==========================================================
+' ???????
+'   ?????????????+ ???????? + ????????? + ?2?????
+'   ???????????????????????????????????
+'==========================================================
+
+Public Sub CreateSeal()
+    Dim doc As Document
+    Dim pg As Page
+    Dim lay As Layer
+    Dim w As Double
+    Dim h As Double
+    Dim txt1 As String
+    Dim txt2 As String
+    Dim cx As Double
+    Dim cy As Double
+    Dim r As Double
+    Dim red As Color
+    Dim circle As Shape
+    Dim t As Shape
+    Dim star As Shape
+
+    If Not HasDocument() Then Exit Sub
+
+    txt1 = InputBox("?????????????????????????????", "???????", "????????????")
+    If Len(txt1) = 0 Then Exit Sub
+    txt2 = InputBox("??????????????????????", "???????", "????")
+
+    Set doc = CorelDRAW.ActiveDocument
+    Set pg = doc.ActivePage
+    Set lay = pg.ActiveLayer
+
+    PageWH pg, w, h
+    If w <= 0 Then w = 210
+    If h <= 0 Then h = 297
+
+    cx = w / 2
+    cy = h / 2
+    r = 20
+
+    Set red = CreateRGBColor(255, 0, 0)
+
+    Optimization = True
+    doc.BeginCommandGroup "???????"
+
+    ' 1. ????????????????????
+    Set circle = Nothing
+    On Error Resume Next
+    Set circle = lay.CreateEllipse2(cx, cy, r, r)
+    On Error GoTo 0
+
+    If circle Is Nothing Then
+        MsgBox "?????????????????????????????????", vbExclamation, "???????"
+        doc.EndCommandGroup
+        Optimization = False
+        Exit Sub
+    End If
+
+    ' ??????????????????? + ???????
+    On Error Resume Next
+    circle.Fill.ApplyNoFill
+    circle.Outline.Color.CopyAssign red
+    circle.Outline.Width = 1.2
+    On Error GoTo 0
+
+    ' 2. ????????
+    On Error Resume Next
+    Set t = lay.CreateArtisticTextWide(cx, cy, txt1)
+    If Not t Is Nothing Then
+        t.Text.Story.Font = "????"
+        t.Text.Story.Size = 10
+        t.Text.FitToPath circle
+        t.Fill.ApplyUniformFill red
+    End If
+    Set t = Nothing
+    On Error GoTo 0
+
+    ' 3. ?2?????
+    If Len(txt2) > 0 Then
+        On Error Resume Next
+        Set t = lay.CreateArtisticTextWide(cx, cy - 8, txt2)
+        If Not t Is Nothing Then
+            t.Text.Story.Font = "????"
+            t.Text.Story.Size = 12
+            t.Text.Story.Alignment = cdrCenterAlignment
+            t.SetPosition cx, cy - 8
+            t.Fill.ApplyUniformFill red
+        End If
+        Set t = Nothing
+        On Error GoTo 0
+    End If
+
+    ' 4. ?????????
+    On Error Resume Next
+    Set star = lay.CreatePolygon(cx, cy, 5, 5)
+    If Not star Is Nothing Then
+        star.SetPolygonProperties 5, 53
+        star.Fill.ApplyUniformFill red
+        star.Outline.Width = 0
+    End If
+    Set star = Nothing
+    On Error GoTo 0
+
+    doc.EndCommandGroup
+    Optimization = False
+    DoRefresh
+End Sub

@@ -1,0 +1,70 @@
+Attribute VB_Name = "M_JPG"
+Option Explicit
+
+'==========================================================
+' JPG ????????
+'   ??????? JPG ????????????????????
+'==========================================================
+
+Public Sub BatchExportJPG()
+    Dim doc As Document
+    Dim pg As Page
+    Dim folder As String
+    Dim dpi As Long
+    Dim i As Long
+    Dim opt As StructExportOptions
+    Dim f As String
+    Dim base As String
+
+    If Not HasDocument() Then Exit Sub
+    Set doc = CorelDRAW.ActiveDocument
+
+    folder = InputBox("????????????????????? = ?????", "JPG????????", DesktopPath())
+    If Len(folder) = 0 Then Exit Sub
+    If Right$(folder, 1) <> "\" Then folder = folder & "\"
+    If Dir(folder, vbDirectory) = "" Then
+        MsgBox "????????????" & folder, vbExclamation, "JPG????????"
+        Exit Sub
+    End If
+
+    dpi = Val(InputBox("????? dpi????? 300??", "JPG????????", "300"))
+    If dpi <= 0 Then dpi = 300
+
+    ' ?????????????????????????
+    On Error Resume Next
+    Set opt = CreateStructExportOptions()
+    If opt Is Nothing Then Set opt = New StructExportOptions
+    On Error GoTo 0
+
+    If opt Is Nothing Then
+        MsgBox "???????????????????????????????", vbExclamation, "JPG????????"
+        Exit Sub
+    End If
+
+    opt.ImageType = cdrRGBColorImage
+    opt.ResolutionX = dpi
+    opt.ResolutionY = dpi
+    opt.AntiAliasing = cdrNormalAntiAliasing
+
+    base = BaseName(doc.FileName)
+
+    Optimization = True
+    doc.BeginCommandGroup "JPG????????"
+    For i = 1 To doc.Pages.Count
+        Set pg = doc.Pages(i)
+        On Error Resume Next
+        pg.Activate
+        On Error GoTo 0
+
+        f = folder & base & "_??" & i & "?.jpg"
+
+        On Error Resume Next
+        doc.ExportEx f, cdrJPEG, cdrCurrentPage, opt
+        On Error GoTo 0
+    Next i
+    doc.EndCommandGroup
+    Optimization = False
+
+    MsgBox "????? " & doc.Pages.Count & " ?? JPG ????" & vbCrLf & folder, _
+           vbInformation, "JPG????????"
+End Sub
