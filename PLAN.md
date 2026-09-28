@@ -254,9 +254,22 @@ X4 内存里已经有一份 CDRX4Toolkit 工程**。旧 `build_gms.vbs` 直接
 | 2026-09-27 | 首次推送 GitHub | 仓库 `Ri1035/cdrx4-toolkit` 建立（MIT），推的是 v1.0.1 时代的旧文件 |
 | 2026-09-28 | **v1.0.2 全量推送** | commit `5934c04`，42 个文件 / 493911 字节：`src/` 12 模块、`tools/` 冒烟+20 个探针、`dist/安装CDRX4增强工具.vbs`、`README.md`、`PLAN.md`、构建脚本 |
 | 2026-09-28 | 文档补丁 | commit `e469ceb`，README 目录树补上 `tools/probe*.vbs`（仓库有、文档漏列） |
+| 2026-09-28 | **v1.1.0 全量推送** | commit `80fa044`，25 个文件（+4557 / −643）：新增 `dist/卸载CDRX4增强工具.vbs`、`uninstaller_*`、`logs/`，README 重写；安装器与工作区标记随 v1.0.3 的崩溃修复一并发布 |
 
-推送方式：本机 **没有 git CLI**，走 GitHub git-data API（blobs → tree → commit → PATCH ref）。
-大文件（安装器 216KB）先读字节再 base64，body 全部手工转义成纯 ASCII，避免 PowerShell 编码踩坑。
+推送方式：本机**有 git CLI**。`_push_stage/` 是本地暂存仓库（remote 指向 `Ri1035/cdrx4-toolkit`），
+提交好之后直接推：
+
+```
+git -C _push_stage -c credential.helper= push "https://<token>@github.com/Ri1035/cdrx4-toolkit.git" main:main
+```
+
+token 内联在 URL 里、**不写进 `remote.origin.url`**，避免凭据落到 `.git/config`。
+（v1.0.2 时代确实没有 git CLI，那次走的是 git-data API：blobs → tree → commit → PATCH ref，
+大文件先读字节再 base64，body 手工转义成纯 ASCII。）
+
+**GitHub 连接器推不了这个仓库**：连接器 OAuth 身份是 `KOKACODA`，
+在 `Ri1035/cdrx4-toolkit` 上 `permissions.push=false`，走连接器只会 403。
+推送必须用 `Ri1035` 的凭据（本机 `GH_TOKEN` 环境变量是 KOKACODA 的，不能用）。
 
 ### 本地交付位置
 
