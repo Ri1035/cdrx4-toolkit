@@ -255,6 +255,7 @@ X4 内存里已经有一份 CDRX4Toolkit 工程**。旧 `build_gms.vbs` 直接
 | 2026-09-28 | **v1.0.2 全量推送** | commit `5934c04`，42 个文件 / 493911 字节：`src/` 12 模块、`tools/` 冒烟+20 个探针、`dist/安装CDRX4增强工具.vbs`、`README.md`、`PLAN.md`、构建脚本 |
 | 2026-09-28 | 文档补丁 | commit `e469ceb`，README 目录树补上 `tools/probe*.vbs`（仓库有、文档漏列） |
 | 2026-09-28 | **v1.1.0 全量推送** | commit `80fa044`，25 个文件（+4557 / −643）：新增 `dist/卸载CDRX4增强工具.vbs`、`uninstaller_*`、`logs/`，README 重写；安装器与工作区标记随 v1.0.3 的崩溃修复一并发布 |
+| 2026-09-28 | **v1.2.0 全量推送** | commit `aa688ec`，9 个文件（+668 / −474）：`M_Curves` 转曲范围拆分、`M_Test` 新增 1b 用例、提示文案与安装器重出、CHANGELOG/README/PLAN 更新 |
 
 推送方式：本机**有 git CLI**。`_push_stage/` 是本地暂存仓库（remote 指向 `Ri1035/cdrx4-toolkit`），
 提交好之后直接推：
@@ -573,4 +574,4 @@ GMS SHA-256：`403F8B2E1E50A6E0BF8F5011A486FF4CB895F1CB86409E588C1F9BB7C00904CA`
 
 ## 12.5 待办
 
-- [ ] 用户确认 → 推送 GitHub
+- [x] 用户确认 → 推送 GitHub（commit `aa688ec`）
