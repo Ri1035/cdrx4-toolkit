@@ -3,15 +3,24 @@ Option Explicit
 
 '==========================================================
 ' 全部转曲
-'   把所有页面的文本与图形都转成曲线
-'   可选是否深入 PowerClip 容器内部
+'   把所有页面的文本与图形转成曲线。
+'   弹窗两步：① 范围（全部 / 仅文字 / 仅图形）② 是否深入 PowerClip 容器内部。
 '
 '   X4 实测：Shape.ConvertToCurves 是「语句」，不能 Set 返回值。
+'
+'   【不要引用没验证过的 cdr* 常量】一个常量在 X4 里不存在 → 整个工程编译不过
+'   → 所有宏全废（PLAN §3.5 的教训）。下面用到的常量都由 M_Test.Probe 实际印出过。
 '==========================================================
+
+' 转曲范围
+Private Const SCOPE_ALL As Long = 0
+Private Const SCOPE_TEXT As Long = 1
+Private Const SCOPE_SHAPE As Long = 2
 
 ' 带对话框的入口
 Public Sub ConvertAllToCurves()
     Dim ans As VbMsgBoxResult
+    Dim scope As Long
     Dim deep As Boolean
     Dim n As Long
 
@@ -20,21 +29,37 @@ Public Sub ConvertAllToCurves()
         Exit Sub
     End If
 
-    ans = MsgBox("是否全部转曲？" & vbCrLf & vbCrLf & _
-                 "是 = 转曲，并深入 PowerClip 容器内部一起处理" & vbCrLf & _
-                 "否 = 只转曲顶层对象，不动容器内部" & vbCrLf & _
-                 "取消 = 什么也不做", _
+    ' ① 范围
+    ans = MsgBox("转曲范围？" & vbCrLf & vbCrLf & _
+                 "是 = 文字 + 图形（全部）" & vbCrLf & _
+                 "否 = 只转文字" & vbCrLf & _
+                 "取消 = 只转图形", _
+                 vbYesNoCancel + vbQuestion, "全部转曲")
+    Select Case ans
+        Case vbYes:    scope = SCOPE_ALL
+        Case vbNo:     scope = SCOPE_TEXT
+        Case vbCancel: scope = SCOPE_SHAPE
+    End Select
+
+    ' ② 深度
+    ans = MsgBox("是否深入 PowerClip 容器内部？" & vbCrLf & vbCrLf & _
+                 "是 = 容器内部的文字 / 图形也一起转" & vbCrLf & _
+                 "否 = 只处理顶层对象" & vbCrLf & _
+                 "取消 = 返回，什么也不做", _
                  vbYesNoCancel + vbQuestion, "全部转曲")
     If ans = vbCancel Then Exit Sub
     deep = (ans = vbYes)
 
-    n = ConvertAllToCurvesCore(deep)
+    n = ConvertAllToCurvesCore(deep, scope)
 
-    MsgBox "全部转曲完成，共转换 " & n & " 个对象。", vbInformation, "全部转曲"
+    MsgBox "转曲完成，共转换 " & n & " 个对象（" & ScopeName(scope) & "）。", _
+           vbInformation, "全部转曲"
 End Sub
 
-' 纯逻辑，供自检调用
-Public Function ConvertAllToCurvesCore(ByVal deep As Boolean) As Long
+' 纯逻辑，供自检调用。
+' scope 省略时按「全部」处理，所以旧的 ConvertAllToCurvesCore(True) 调用仍然有效。
+Public Function ConvertAllToCurvesCore(ByVal deep As Boolean, _
+                                       Optional ByVal scope As Long = SCOPE_ALL) As Long
     Dim doc As Document
     Dim pg As Page
     Dim n As Long
@@ -43,10 +68,10 @@ Public Function ConvertAllToCurvesCore(ByVal deep As Boolean) As Long
     If doc Is Nothing Then Exit Function
 
     CorelDRAW.Optimization = True
-    doc.BeginCommandGroup "全部转曲"
+    doc.BeginCommandGroup "转曲（" & ScopeName(scope) & "）"
 
     For Each pg In doc.Pages
-        n = n + ConvertRange(pg.Shapes.All, deep)
+        n = n + ConvertRange(pg.Shapes.All, deep, scope)
     Next pg
 
     doc.EndCommandGroup
@@ -57,7 +82,8 @@ Public Function ConvertAllToCurvesCore(ByVal deep As Boolean) As Long
 End Function
 
 ' 递归处理一个形状范围，返回转换成功的个数
-Private Function ConvertRange(ByVal sr As Object, ByVal deep As Boolean) As Long
+Private Function ConvertRange(ByVal sr As Object, ByVal deep As Boolean, _
+                              ByVal scope As Long) As Long
     Dim i As Long
     Dim sh As Shape
     Dim kids As Object
@@ -75,27 +101,24 @@ Private Function ConvertRange(ByVal sr As Object, ByVal deep As Boolean) As Long
             Set sh = sr.Shapes(i)
         End If
         If Err.Number = 0 And Not sh Is Nothing Then
-            Select Case sh.Type
-                Case cdrGroupShape
-                    ' 组内对象逐个处理
-                    Set kids = sh.Shapes.All
-                    If Err.Number = 0 And Not kids Is Nothing Then
-                        n = n + ConvertRange(kids, deep)
-                    End If
-                    Err.Clear
-
-                Case cdrTextShape, cdrRectangleShape, cdrEllipseShape, _
-                     cdrPolygonShape
-                    ' ConvertToCurves 是语句，不能 Set
-                    sh.ConvertToCurves
-                    If Err.Number = 0 Then n = n + 1
-                    Err.Clear
-            End Select
+            If sh.Type = cdrGroupShape Then
+                ' 组内对象逐个处理
+                Set kids = sh.Shapes.All
+                If Err.Number = 0 And Not kids Is Nothing Then
+                    n = n + ConvertRange(kids, deep, scope)
+                End If
+                Err.Clear
+            ElseIf WantsCurves(sh.Type, scope) Then
+                ' ConvertToCurves 是语句，不能 Set
+                sh.ConvertToCurves
+                If Err.Number = 0 Then n = n + 1
+                Err.Clear
+            End If
 
             ' 深入 PowerClip 内部
             If deep Then
                 Set kids = PowerClipRange(sh)
-                If Not kids Is Nothing Then n = n + ConvertRange(kids, True)
+                If Not kids Is Nothing Then n = n + ConvertRange(kids, True, scope)
             End If
         End If
         Err.Clear
@@ -103,6 +126,34 @@ Private Function ConvertRange(ByVal sr As Object, ByVal deep As Boolean) As Long
     On Error GoTo 0
 
     ConvertRange = n
+End Function
+
+' 这个类型在当前范围下要不要转曲
+Private Function WantsCurves(ByVal t As Long, ByVal scope As Long) As Boolean
+    If scope = SCOPE_TEXT Then
+        WantsCurves = (t = cdrTextShape)
+        Exit Function
+    End If
+
+    ' 「仅图形」与「全部」的差别只在文本；其余非文本矢量对象一律转。
+    Select Case t
+        Case cdrTextShape
+            WantsCurves = (scope = SCOPE_ALL)
+        Case cdrCurveShape
+            WantsCurves = False          ' 本来就是曲线，转了也是白转
+        Case Else
+            ' 矩形 / 椭圆 / 多边形 / 符号实例 / 自定义形状 / 连接线 …
+            ' 位图等转不了的会在这里报错，靠上面的 Err 判定跳过，不计入个数
+            WantsCurves = True
+    End Select
+End Function
+
+Private Function ScopeName(ByVal scope As Long) As String
+    Select Case scope
+        Case SCOPE_TEXT:  ScopeName = "仅文字"
+        Case SCOPE_SHAPE: ScopeName = "仅图形"
+        Case Else:        ScopeName = "文字 + 图形"
+    End Select
 End Function
 
 ' 取 PowerClip 内部的对象集合，没有就返回 Nothing

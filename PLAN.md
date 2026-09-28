@@ -530,4 +530,47 @@ GMS SHA-256：`403F8B2E1E50A6E0BF8F5011A486FF4CB895F1CB86409E588C1F9BB7C00904CA`
 
 ### 11.4 待办
 
+- [x] 用户确认 → 推送 GitHub（commit `80fa044` + 文档补丁 `3fc35d4`）
+
+---
+
+# 12. v1.2.0 「全部转曲」拆分转曲范围（2026-09-28）
+
+## 12.1 需求
+
+用户提出：「全部转曲那个功能能不能分开文字转曲和图形转曲」。追问后确定两条约束：
+
+1. 工具栏**不加按钮**，仍是 9 个 —— 用「一颗按钮 + 弹窗选范围」实现；
+2. 「图形」= **所有非文本矢量对象**，不只是矩形、椭圆。
+
+## 12.2 实现（`src\M_Curves.bas`）
+
+- 新增三个私有常量 `SCOPE_ALL = 0` / `SCOPE_TEXT = 1` / `SCOPE_SHAPE = 2`；
+- `ConvertAllToCurvesCore(deep, [scope])` 增加**可选**参数，省略即按「全部」处理 ——
+  旧调用 `ConvertAllToCurvesCore(True)`（`M_Test` 里在用）继续有效；
+- 新增 `WantsCurves(type, scope)` 决定某个 `Shape.Type` 在当前范围下转不转：
+  - 仅文字 → 只认 `cdrTextShape`；
+  - 仅图形 / 全部 → 只排除 `cdrTextShape`（按 scope 决定）与 `cdrCurveShape`，其余一律转；
+  - 转不了的对象（位图等）靠 `ConvertToCurves` 报错跳过，不计入个数；
+- 组对象（`cdrGroupShape`）与 PowerClip 的递归遍历原样保留，三种范围走同一套。
+
+弹窗两步：① 范围（是 = 全部／否 = 仅文字／取消 = 仅图形）② 深度（是 = 深入容器／否 = 只顶层／取消 = 退出）。
+**第一步的「取消」被借来表示第三种范围**，所以第二步的「取消」才是真正的放弃操作。
+
+## 12.3 未改动的部分
+
+- 工具栏按钮数量、名称、顺序、guid 全部不变；
+- 只改了两处提示文案（`M_Install.CmdList` 与 `workspace_markup.txt`），安装器重新生成后同步内嵌。
+
+## 12.4 验证记录（本机，X4）
+
+| 项 | 结果 |
+|---|---|
+| `M_Test` 新增 `1b` 用例 | 仅文字 `n=1 want=1`、仅图形 `n=3 want=3`、全部 `n=0 want=0` —— 三步互相印证，全中 |
+| 9 功能冒烟 | 全部 `err=0`（`logs\smoke.log`） |
+| 真实启动 | **LAUNCH PASS**（30s 内 0 崩溃事件、进程响应正常） |
+| 已安装 GMS | SHA-256 `6B7872C426B2C1B16ADFA6F1E50E8A2DA3B81F6537A6BBCA471E389F2E37F876`，168978 字节，与 `dist` 构建产物一致 |
+
+## 12.5 待办
+
 - [ ] 用户确认 → 推送 GitHub

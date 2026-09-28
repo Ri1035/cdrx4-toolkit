@@ -26,6 +26,12 @@ Public Sub SelfTest()
     Dim log As String
     Dim logPath As String
     Dim jpgDir As String
+    ' 1b 转曲范围测试用的临时文档
+    Dim d2 As Document
+    Dim l2 As Object
+    Dim nT As Long
+    Dim nS As Long
+    Dim nA As Long
 
     logPath = Environ$("TEMP") & "\cdrx4_selftest.log"
     log = "CDRX4Toolkit selftest " & Now & vbCrLf
@@ -173,6 +179,47 @@ Public Sub SelfTest()
     log = log & "9 jpg           n=" & n & " err=" & Err.Number & vbCrLf
     Err.Clear
     On Error GoTo 0
+
+    ' --- 1b 转曲范围：仅文字 / 仅图形 / 全部 ---
+    ' 每个范围都要一份「还没转过」的对象，所以另开一个临时文档。
+    ' 三步的期望值互相印证：
+    '   仅文字 → 文字变曲线，转 1 个
+    '   仅图形 → 转 3 个（矩形 / 椭圆 / 多边形；上一步那根曲线应被跳过）
+    '   全部   → 此时已全是曲线，转 0 个
+    On Error Resume Next
+    Err.Clear
+    Set d2 = CorelDRAW.CreateDocument
+    If Err.Number = 0 And Not d2 Is Nothing Then
+        Set l2 = d2.ActivePage.ActiveLayer
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    If l2 Is Nothing Then
+        log = log & "1b scope        SKIPPED (no doc)" & vbCrLf
+    Else
+        On Error Resume Next
+        Err.Clear
+        l2.CreateArtisticTextWide 0, 0, "Scope"
+        l2.CreateRectangle2 0, 20, 20, 10
+        l2.CreateEllipse2 40, 25, 5, 5
+        l2.CreatePolygon2 60, 25, 5, 6
+        log = log & "1b build        err=" & Err.Number & vbCrLf
+        Err.Clear
+        On Error GoTo 0
+
+        nT = M_Curves.ConvertAllToCurvesCore(False, 1)
+        log = log & "1b scope text   n=" & nT & " want=1" & vbCrLf
+        nS = M_Curves.ConvertAllToCurvesCore(False, 2)
+        log = log & "1b scope shape  n=" & nS & " want=3" & vbCrLf
+        nA = M_Curves.ConvertAllToCurvesCore(False, 0)
+        log = log & "1b scope all    n=" & nA & " want=0" & vbCrLf
+
+        On Error Resume Next
+        d2.Dirty = False
+        d2.Close
+        On Error GoTo 0
+    End If
 
     log = log & "done" & vbCrLf
     WriteLog fso, logPath, log

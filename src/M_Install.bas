@@ -29,7 +29,7 @@ Public Const TOOLBAR_NAME As String = "增强工具"
 ' 顺序按用户要求：转曲 → CMYK → 颜色替换 → 其余
 Private Function CmdList() As Variant
     CmdList = Array( _
-        Array("M_Curves.ConvertAllToCurves", "全部转曲", "所有页面的文本与图形转换为曲线"), _
+        Array("M_Curves.ConvertAllToCurves", "全部转曲", "所有页面的文本与图形转换为曲线（可选只转文字或只转图形）"), _
         Array("M_CMYK.ConvertToCMYK", "转CMYK", "把文档中的 RGB 填充与轮廓转换为 CMYK"), _
         Array("M_Color.ReplaceColor", "颜色替换", "选中两个对象：用第一个的颜色替换第二个的"), _
         Array("M_Rect.StdRectangle", "标准矩形", "把选中的圆角矩形重置为直角矩形"), _
