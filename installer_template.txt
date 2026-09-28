@@ -4,12 +4,31 @@ Option Explicit
 '============================================================
 '  CDR X4 Toolkit - one-click installer
 '
-'  Usage: double-click this file. It finds the CorelDRAW X4
-'  user GMS folder, writes CDRX4Toolkit.gms into it, and then
-'  tells you what to do next. Restart CorelDRAW once and the
-'  toolbar shows up.
+'  Double-click this file.  It does two things:
 '
-'  Uninstall: delete CDRX4Toolkit.gms from that folder and
+'    1. finds the CorelDRAW X4 user GMS folder and writes
+'       CDRX4Toolkit.gms into it;
+'    2. writes the toolkit toolbar into the CorelDRAW
+'       workspace file (DRAWUIConfig.xml) so the toolbar and its
+'       Chinese button captions are there on the next start.
+'
+'  IT NEVER TALKS TO CORELDRAW.  No CreateObject, no
+'  GMSManager.RunMacro, no CommandBars.  That is deliberate:
+'  building the toolbar through the CommandBars API
+'  (Delete / Add / Visible / AddCustomButton) was reproduced
+'  crashing X4 in CrlFrmWk.dll (0xc0000005 -> 0xc000041d) and
+'  leaving an unkillable 0-thread zombie.  v1.0.2 did the same
+'  thing from CorelDRAW's own GlobalMacroStorage_Start callback
+'  and killed X4 on every launch (PLAN.md section 10).
+'
+'  CorelDRAW persists a toolbar as plain XML anyway - the same
+'  markup it writes when a user drags a macro onto a toolbar in
+'  Tools > Customization > Commands > Macros.  So this installer
+'  writes that markup itself, with CorelDRAW closed.  Nothing
+'  here can hang or crash CorelDRAW, because nothing here runs
+'  inside it.
+'
+'  Uninstall: delete CDRX4Toolkit.gms from the GMS folder and
 '  restart CorelDRAW.
 '
 '  WHY THIS FILE IS ASCII-ONLY
@@ -18,12 +37,14 @@ Option Explicit
 '  downloaded from GitHub) gets mis-decoded - and because a
 '  mis-decoded multi-byte sequence can swallow the closing
 '  quote, it can even be a syntax error. So all Chinese text
-'  lives in MSG_B64 below: a base64 UTF-8 blob decoded at run
-'  time. The script then behaves the same whatever encoding the
-'  file happens to be saved or transferred in.
+'  lives in MSG_B64 / WS_B64 below: base64 UTF-8 blobs decoded
+'  at run time. The script then behaves the same whatever
+'  encoding the file happens to be saved or transferred in.
 '============================================================
 
 Const GMS_NAME = "CDRX4Toolkit.gms"
+Const PRJ_NAME = "CDRX4Toolkit"
+Const WS_SENTINEL = "%%SECTION%%"
 
 ' embedded plugin payload (CDRX4Toolkit.gms, base64)
 Dim B64
@@ -35,32 +56,40 @@ Dim MSG_B64
 MSG_B64 = "" & _
 @@MSGB64CHUNKS@@
 
+' embedded workspace markup (UTF-8 XML fragments, base64, three
+' sections separated by a line that is exactly WS_SENTINEL:
+' buttons / toolbar skeleton / toolbar visibility)
+Dim WS_B64
+WS_B64 = "" & _
+@@WSB64CHUNKS@@
+
 Dim M
+Dim gFso, gSh
+
 Call Main()
 
 
 Sub Main()
-    Dim fso, sh, appData, corelRoot, list(60), n, i, dst, okCount, msg, data, sub_
-    Dim TB, text
+    Dim corelRoot, list(120), n, i, dst, okCount, msg, data, sub_
+    Dim TB, text, wsList(60), wsN, wsCount, parts, running
 
-    Set fso = CreateObject("Scripting.FileSystemObject")
-    Set sh  = CreateObject("WScript.Shell")
+    Set gFso = CreateObject("Scripting.FileSystemObject")
+    Set gSh  = CreateObject("WScript.Shell")
     LoadMessages
     TB = M(0)
 
-    appData   = sh.ExpandEnvironmentStrings("%APPDATA%")
-    corelRoot = appData & "\Corel"
+    corelRoot = gSh.ExpandEnvironmentStrings("%APPDATA%") & "\Corel"
 
     ' ---- 1. collect every CorelDRAW X4 GMS folder ----
     n = 0
-    If fso.FolderExists(corelRoot) Then
-        n = AddDir(fso, list, n, corelRoot & "\CorelDRAW Graphics Suite X4\User Draw\GMS")
+    If gFso.FolderExists(corelRoot) Then
+        n = AddDir(list, n, corelRoot & "\CorelDRAW Graphics Suite X4\User Draw\GMS")
         On Error Resume Next
-        For Each sub_ In fso.GetFolder(corelRoot).SubFolders
+        For Each sub_ In gFso.GetFolder(corelRoot).SubFolders
             ' X4 only, so other versions are left alone
             If InStr(1, sub_.Name, "X4", vbTextCompare) > 0 Then
-                n = AddDir(fso, list, n, sub_.Path & "\User Draw\GMS")
-                n = AddDir(fso, list, n, sub_.Path & "\Draw\GMS")
+                n = AddDir(list, n, sub_.Path & "\User Draw\GMS")
+                n = AddDir(list, n, sub_.Path & "\Draw\GMS")
             End If
         Next
         Err.Clear
@@ -71,11 +100,11 @@ Sub Main()
     If n = 0 Then
         dst = corelRoot & "\CorelDRAW Graphics Suite X4\User Draw"
         On Error Resume Next
-        If Not fso.FolderExists(dst) Then fso.CreateFolder dst
-        If Not fso.FolderExists(dst & "\GMS") Then fso.CreateFolder dst & "\GMS"
+        If Not gFso.FolderExists(dst) Then gFso.CreateFolder dst
+        If Not gFso.FolderExists(dst & "\GMS") Then gFso.CreateFolder(dst & "\GMS")
         Err.Clear
         On Error GoTo 0
-        If fso.FolderExists(dst & "\GMS") Then
+        If gFso.FolderExists(dst & "\GMS") Then
             list(0) = dst & "\GMS"
             n = 1
         End If
@@ -93,7 +122,7 @@ Sub Main()
     msg = ""
     For i = 0 To n - 1
         dst = list(i) & "\" & GMS_NAME
-        If WriteBin(fso, dst, data) Then
+        If WriteBin(dst, data) Then
             okCount = okCount + 1
             msg = msg & "  " & M(4) & " " & list(i) & vbCrLf
         Else
@@ -101,24 +130,364 @@ Sub Main()
         End If
     Next
 
-    ' ---- 3. report ----
-    If okCount > 0 Then
-        text = Fill(M(2), "{N}", CStr(okCount))
-        text = Fill(text, "{LIST}", msg)
-        text = Fill(text, "{TB}", TB)
-        MsgBox Fmt(text), vbInformation, TB
-    Else
+    If okCount = 0 Then
         text = Fill(M(3), "{LIST}", msg)
         MsgBox Fmt(text), vbExclamation, TB
+        Exit Sub
     End If
+
+    ' ---- 3. put the toolbar into the workspace ----
+    wsN = 0
+    wsCount = InstallWorkspace(wsList, wsN)
+    For i = 0 To wsN - 1
+        parts = Split(wsList(i), "|")
+        If UBound(parts) >= 1 Then
+            If parts(0) = "1" Then
+                msg = msg & "  " & M(4) & " " & M(7) & " " & parts(1) & vbCrLf
+            Else
+                msg = msg & "  " & M(5) & " " & M(7) & " " & parts(1) & vbCrLf
+            End If
+        End If
+    Next
+
+    ' ---- 4. report ----
+    text = Fill(M(2), "{N}", CStr(okCount))
+    text = Fill(text, "{LIST}", msg)
+    text = Fill(text, "{TB}", TB)
+    If wsCount = 0 Then text = text & vbCrLf & vbCrLf & Fmt(M(6))
+
+    running = CorelRunning()
+    If running Then text = text & vbCrLf & vbCrLf & Fill(Fmt(M(8)), "{TB}", TB)
+
+    MsgBox Fmt(text), vbInformation, TB
 End Sub
 
 
+'------------------------------------------------------------
+' Write the toolbar into every CorelDRAW X4 workspace file.
+'
+' Three separate places have to be written, and leaving any one
+' of them out silently breaks the toolbar:
+'
+'   1. <items>       - one <itemData> per button.  This is what
+'                      binds the button to a macro and carries the
+'                      Chinese caption / tooltip.  It is exactly
+'                      the markup CorelDRAW writes when a user
+'                      drags a macro out of the Customization
+'                      dialog, so X4 resolves the macro itself -
+'                      no AddPluginCommand call is needed.
+'   2. <commandBars> - one <commandBarData>.  The toolbar
+'                      skeleton: its name and the button guids in
+'                      display order.
+'   3. <cmdBarLane>  - one <commandBar guidRef=... visible="true">.
+'                      Without this entry the toolbar exists but
+'                      stays hidden, which is the failure mode that
+'                      makes people think the install did nothing.
+'
+' Idempotent: everything left over from an earlier install is
+' stripped first, so running the installer twice cannot produce
+' two toolbars.  Every file is backed up to .cdrx4bak and the
+' edited text has to parse as XML before it is allowed to
+' replace the original.
+'
+' Returns how many files ended up correct.  list() gets one
+' "1|<path>" or "0|<path>" entry per file looked at.
+'------------------------------------------------------------
+Function InstallWorkspace(list, n)
+    Dim files(60), nf, ws, xml, out, itemsMark, barMark, laneMark
+    Dim barGuid, barName, guids(60), ng, ok
+
+    InstallWorkspace = 0
+    If Not SplitMarkup(itemsMark, barMark, laneMark) Then Exit Function
+
+    barGuid = Attr(barMark, "guid")
+    barName = Attr(barMark, "nonLocalizableName")
+    If Len(barGuid) = 0 Then Exit Function
+    ng = ItemGuids(itemsMark, guids)
+
+    nf = FindWorkspaceFiles(files, 0)
+    If nf = 0 Then Exit Function
+
+    For ws = 0 To nf - 1
+        xml = ReadUtf8(files(ws))
+        If Len(xml) > 0 Then
+            out = StripToolkit(xml, barGuid, barName, guids, ng)
+            out = InsertMarkup(out, itemsMark, barMark, laneMark)
+            If Len(out) > 0 Then
+                ok = True
+                If StrComp(out, xml, vbBinaryCompare) <> 0 Then
+                    ' something changed, so prove it is still valid
+                    ' XML before touching the real file
+                    ok = False
+                    If ValidXml(out) Then
+                        On Error Resume Next
+                        Err.Clear
+                        gFso.CopyFile files(ws), files(ws) & ".cdrx4bak", True
+                        Err.Clear
+                        On Error GoTo 0
+                        ok = WriteUtf8(files(ws), out)
+                    End If
+                End If
+
+                If ok Then
+                    InstallWorkspace = InstallWorkspace + 1
+                    list(n) = "1|" & files(ws)
+                Else
+                    list(n) = "0|" & files(ws)
+                End If
+                n = n + 1
+            End If
+        End If
+    Next
+End Function
+
+
+' pull the three markup sections out of WS_B64
+Function SplitMarkup(itemsMark, barMark, laneMark)
+    Dim s, parts
+
+    SplitMarkup = False
+    s = Utf8FromB64(WS_B64)
+    s = Replace(s, vbCrLf, vbLf)
+    parts = Split(s, vbLf & WS_SENTINEL & vbLf)
+    If UBound(parts) <> 2 Then Exit Function
+
+    itemsMark = Trim(parts(0))
+    barMark   = Trim(parts(1))
+    laneMark  = Trim(parts(2))
+    If Len(itemsMark) = 0 Or Len(barMark) = 0 Or Len(laneMark) = 0 Then Exit Function
+    SplitMarkup = True
+End Function
+
+
+' the guids of the nine <itemData> buttons, so a stale toolbar can
+' be recognised even if its own guid or name ever changes
+Function ItemGuids(mark, arr)
+    Dim re, ms, i
+
+    ItemGuids = 0
+    On Error Resume Next
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "<itemData\s+[^>]*guid=""([^""]*)"""
+    Set ms = re.Execute(mark)
+    If Err.Number = 0 Then
+        For i = 0 To ms.Count - 1
+            If ItemGuids < 60 Then
+                arr(ItemGuids) = ms(i).SubMatches(0)
+                ItemGuids = ItemGuids + 1
+            End If
+        Next
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+' remove everything a previous install of ours left behind
+Function StripToolkit(xml, barGuid, barName, guids, ng)
+    Dim out, i, s, e, block, hit, g
+
+    out = xml
+
+    ' 1. the visibility entry in <cmdBarLane>
+    out = ReReplace(out, "<commandBar\s+[^>]*guidRef=""" & ReEsc(barGuid) & """[^>]*/>", "")
+
+    ' 2. the toolbar skeleton.  Identify it by our bar guid, by our
+    '    toolbar name, or by any of our button guids
+    i = 1
+    Do While True
+        s = InStr(i, out, "<commandBarData")
+        If s = 0 Then Exit Do
+        e = InStr(s, out, "</commandBarData>")
+        If e = 0 Then Exit Do
+        e = e + Len("</commandBarData>") - 1
+        block = Mid(out, s, e - s + 1)
+
+        hit = False
+        If InStr(1, block, "guidRef=""" & barGuid & """", vbTextCompare) > 0 Then hit = True
+        If Len(barName) > 0 Then
+            If InStr(1, block, "nonLocalizableName=""" & barName & """", vbTextCompare) > 0 Then hit = True
+        End If
+        For g = 0 To ng - 1
+            If InStr(1, block, "guidRef=""" & guids(g) & """", vbTextCompare) > 0 Then hit = True
+        Next
+
+        If hit Then
+            out = Left(out, s - 1) & Mid(out, e + 1)
+        Else
+            i = e + 1
+        End If
+    Loop
+
+    ' 3. the button bindings
+    out = ReReplace(out, "<itemData\s+[^>]*dynamicCommand=""CDRX4Toolkit\.[^""]*""[^>]*/>", "")
+
+    StripToolkit = out
+End Function
+
+
+' splice the three fragments into the workspace file.
+'
+' Returns "" when an anchor is missing, so the caller skips the
+' file instead of writing a half-patched one.
+Function InsertMarkup(xml, itemsMark, barMark, laneMark)
+    Dim out, p
+
+    out = xml
+
+    p = InStrRev(out, "</items>")
+    If p = 0 Then InsertMarkup = "": Exit Function
+    out = Left(out, p - 1) & itemsMark & Mid(out, p)
+
+    p = InStrRev(out, "</commandBars>")
+    If p = 0 Then InsertMarkup = "": Exit Function
+    out = Left(out, p - 1) & barMark & Mid(out, p)
+
+    p = LaneAnchor(out)
+    If p = 0 Then InsertMarkup = "": Exit Function
+    out = Left(out, p - 1) & laneMark & Mid(out, p)
+
+    InsertMarkup = out
+End Function
+
+
+' where the floating toolbars are listed.  X4 keeps them in the
+' <dockBar position="float"> lane; falling back to the first lane
+' keeps this working on a workspace shaped slightly differently.
+Function LaneAnchor(xml)
+    Dim s, e
+
+    LaneAnchor = 0
+    s = InStr(1, xml, "<dockBar position=""float"">", vbTextCompare)
+    If s > 0 Then
+        e = InStr(s, xml, "</cmdBarLane>")
+        If e > 0 Then
+            LaneAnchor = e
+            Exit Function
+        End If
+    End If
+    LaneAnchor = InStr(1, xml, "</cmdBarLane>")
+End Function
+
+
+' does the edited text still parse as XML?
+'
+' The check goes through a temp file on purpose: the workspace file
+' starts with an encoding declaration, and MSXML refuses to parse a
+' *string* that declares an encoding.  Loading a file honours it.
+Function ValidXml(s)
+    Dim doc, tmp, ok
+
+    ValidXml = False
+    tmp = gSh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_ws_check.xml"
+
+    On Error Resume Next
+    Err.Clear
+    ok = WriteUtf8(tmp, s)
+    If Err.Number = 0 And ok Then
+        Set doc = CreateObject("MSXML2.DOMDocument")
+        doc.async = False
+        doc.validateOnParse = False
+        doc.resolveExternals = False
+        ValidXml = doc.load(tmp)
+    End If
+    Err.Clear
+    On Error GoTo 0
+
+    On Error Resume Next
+    gFso.DeleteFile tmp, True
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+' value of the first name="..." attribute in a fragment
+Function Attr(s, name)
+    Dim re, ms
+
+    Attr = ""
+    On Error Resume Next
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = False
+    re.IgnoreCase = True
+    re.Pattern = name & "=""([^""]*)"""
+    Set ms = re.Execute(s)
+    If Err.Number = 0 Then
+        If ms.Count > 0 Then Attr = ms(0).SubMatches(0)
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+'------------------------------------------------------------
+' Is CorelDRAW actually running right now?
+'
+' CorelDRAW rewrites DRAWUIConfig.xml when it exits, so patching
+' the file while it is open means the patch is thrown away.  The
+' ThreadCount test matters on machines that have already seen a
+' crash: a crashed CorelDRAW leaves an unkillable 0-thread zombie
+' behind, and that zombie must not be mistaken for a running app
+' (otherwise the installer would nag forever).
+'------------------------------------------------------------
+Function CorelRunning()
+    Dim wmi, procs, p, tc
+
+    CorelRunning = False
+    On Error Resume Next
+    Err.Clear
+    Set wmi = GetObject("winmgmts:\\.\root\cimv2")
+    If Err.Number = 0 Then
+        Set procs = wmi.ExecQuery("Select Name, ThreadCount from Win32_Process Where Name='CorelDRW.exe'")
+        If Err.Number = 0 Then
+            For Each p In procs
+                tc = 0
+                tc = p.ThreadCount
+                If Err.Number <> 0 Then tc = 1
+                Err.Clear
+                If tc > 0 Then CorelRunning = True
+            Next
+        End If
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+' every <X4 root>\User Workspace\<app>\<workspace>\DRAWUIConfig.xml
+Function FindWorkspaceFiles(list, n)
+    Dim root, sub_, ws
+
+    FindWorkspaceFiles = n
+    root = gSh.ExpandEnvironmentStrings("%APPDATA%") & _
+           "\Corel\CorelDRAW Graphics Suite X4\User Workspace"
+    If Not gFso.FolderExists(root) Then Exit Function
+
+    On Error Resume Next
+    For Each sub_ In gFso.GetFolder(root).SubFolders
+        For Each ws In sub_.SubFolders
+            If gFso.FileExists(ws.Path & "\DRAWUIConfig.xml") Then
+                If n < 60 Then
+                    list(n) = ws.Path & "\DRAWUIConfig.xml"
+                    n = n + 1
+                End If
+            End If
+        Next
+    Next
+    Err.Clear
+    On Error GoTo 0
+    FindWorkspaceFiles = n
+End Function
+
+
 ' add an existing GMS folder to the list (deduplicated)
-Function AddDir(fso, list, n, p)
+Function AddDir(list, n, p)
     Dim i
+
     AddDir = n
-    If Not fso.FolderExists(p) Then Exit Function
+    If Not gFso.FolderExists(p) Then Exit Function
     For i = 0 To n - 1
         If LCase(list(i)) = LCase(p) Then Exit Function
     Next
@@ -128,8 +497,9 @@ End Function
 
 
 ' write a binary file
-Function WriteBin(fso, path, data)
+Function WriteBin(path, data)
     Dim st
+
     WriteBin = False
     On Error Resume Next
     Err.Clear
@@ -145,9 +515,40 @@ Function WriteBin(fso, path, data)
 End Function
 
 
+' regex replace (global, case-insensitive)
+Function ReReplace(s, pat, rep)
+    Dim re
+
+    ReReplace = s
+    On Error Resume Next
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = pat
+    ReReplace = re.Replace(s, rep)
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
+' backslash-escape the regex metacharacters in a literal
+Function ReEsc(s)
+    Dim i, ch, out
+
+    out = ""
+    For i = 1 To Len(s)
+        ch = Mid(s, i, 1)
+        If InStr(1, "\.^$*+?()[]{}|", ch, vbBinaryCompare) > 0 Then out = out & "\"
+        out = out & ch
+    Next
+    ReEsc = out
+End Function
+
+
 ' base64 -> byte array
 Function DecodeB64(s)
     Dim doc, el
+
     Set doc = CreateObject("MSXML2.DOMDocument")
     Set el = doc.createElement("b")
     el.dataType = "bin.base64"
@@ -156,8 +557,72 @@ Function DecodeB64(s)
 End Function
 
 
+Function ReadUtf8(path)
+    Dim st
+
+    ReadUtf8 = ""
+    On Error Resume Next
+    Err.Clear
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2
+    st.Charset = "utf-8"
+    st.Open
+    st.LoadFromFile path
+    ReadUtf8 = st.ReadText
+    st.Close
+    If Err.Number <> 0 Then ReadUtf8 = ""
+    Err.Clear
+    On Error GoTo 0
+    ' ADODB usually eats the BOM, but not always
+    If Len(ReadUtf8) > 0 Then
+        If AscW(Left(ReadUtf8, 1)) = &HFEFF Then ReadUtf8 = Mid(ReadUtf8, 2)
+    End If
+End Function
+
+
+' write UTF-8 WITHOUT a BOM.  DRAWUIConfig.xml is CorelDRAW's file
+' and CorelDRAW writes it without one; the one time this installer
+' family added a BOM, the next CorelDRAW start died in CrlFrmWk.dll.
+Function WriteUtf8(path, s)
+    Dim st, raw, ok
+
+    WriteUtf8 = False
+    ok = False
+
+    On Error Resume Next
+    Err.Clear
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2
+    st.Charset = "utf-8"
+    st.Open
+    st.WriteText s
+    st.Position = 0
+    st.Type = 1
+    st.Position = 3          ' skip the BOM ADODB just wrote
+    raw = st.Read
+    st.Close
+    If Err.Number = 0 Then ok = True
+    Err.Clear
+    On Error GoTo 0
+    If Not ok Then Exit Function
+
+    On Error Resume Next
+    Err.Clear
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 1
+    st.Open
+    st.Write raw
+    st.SaveToFile path, 2
+    st.Close
+    If Err.Number = 0 Then WriteUtf8 = True
+    Err.Clear
+    On Error GoTo 0
+End Function
+
+
 Sub LoadMessages()
     Dim s
+
     s = Utf8FromB64(MSG_B64)
     s = Replace(s, vbCrLf, vbLf)
     M = Split(s, vbLf)
@@ -167,6 +632,7 @@ End Sub
 ' base64 -> UTF-8 bytes -> Unicode string
 Function Utf8FromB64(b64)
     Dim st
+
     Set st = CreateObject("ADODB.Stream")
     st.Type = 1
     st.Open

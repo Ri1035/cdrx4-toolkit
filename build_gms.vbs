@@ -46,6 +46,33 @@ srcDir = here & "\src"
 tmpDir = here & "\_build_tmp"
 fails  = 0
 
+' --- optional arguments --------------------------------------
+'   --hook=<file>   read the ThisDocument startup code from <file>
+'                   (UTF-8).  A file whose first non-blank text is
+'                   --none, or an empty file, means "no hook at all".
+'                   Without this flag src\_startup.txt is used, and that
+'                   file says --none -- i.e. the default is no hook.
+'   --nocheck       skip the in-session Probe/Diag/SelfTest run and
+'                   just save the GMS.  Used when the point of the
+'                   build is to launch CorelDRAW by hand afterwards.
+'
+'   The hook lives in a file rather than being hardcoded here because
+'   it is the one piece of code that would run INSIDE CorelDRAW's start
+'   callback.  v1.0.2 had one and it crashed X4 on every launch; keeping
+'   it in a file that says --none is what makes "no hook" the default,
+'   and what makes a hook variant testable by launching X4 for real.
+Dim hookFile, noCheck, argI, argV
+hookFile = ""
+noCheck  = False
+For argI = 0 To WScript.Arguments.Count - 1
+  argV = WScript.Arguments(argI)
+  If LCase(Left(argV, 7)) = "--hook=" Then
+    hookFile = Mid(argV, 8)
+  ElseIf LCase(argV) = "--nocheck" Then
+    noCheck = True
+  End If
+Next
+
 mods = Array("M_Util.bas", "M_Curves.bas", "M_Rect.bas", "M_Color.bas", "M_CMYK.bas", _
              "M_FitPath.bas", "M_JPG.bas", "M_PageNo.bas", "M_Calendar.bas", "M_Seal.bas", _
              "M_Install.bas", "M_Test.bas")
@@ -239,21 +266,48 @@ For k = 0 To UBound(mods)
 Next
 If bad > 0 Then Fail "module names collided - macro paths would break"
 
-' --- 4. startup handler: this is what auto-installs the toolbar ---
+' --- 4. startup handler: THE DEFAULT IS NONE, and it must stay that way ---
+'
+' v1.0.2 shipped a hook in ThisDocument that called
+' M_Install.InstallToolbarSilent from GlobalMacroStorage_Start, and it
+' killed CorelDRAW outright.  The Start callback fires while Corel's
+' command-bar framework is still coming up; CommandBars.Add / Delete /
+' Visible re-enter that framework, Corel takes an access violation in
+' CrlFrmWk.dll, and the process is left behind as an unkillable
+' 0-thread zombie (0xc0000005 then 0xc000041d).  On Error Resume Next
+' does NOT help: an access violation is not a catchable VBA error.
+' PLAN.md section 10 has the event-log evidence and the controlled
+' experiment that pinned it on this hook.
+'
+' So: no hook.  The toolbar is created ONCE by the installer, after
+' CorelDRAW is fully up, and from then on it lives in the workspace
+' (User Workspace\CorelDRAW\_default\DRAWUIConfig.xml) and survives
+' restarts by itself.  That was verified by starting CorelDRW.exe by
+' hand and watching the process -- see tools\real_launch_test.ps1.
+'
+' src\_startup.txt is the single place a hook could be switched back
+' on.  It holds the sentinel --none; --hook=<file> overrides it.
+' Never put UI work in a hook.  If one is ever needed again, prove it
+' with tools\real_launch_test.ps1 (a REAL launch -- RunMacro takes a
+' different boot path and cannot reproduce this class of bug).
 On Error Resume Next
 Err.Clear
 Set docMod = p.VBComponents.Item(1).CodeModule
-code = "Private Sub GlobalMacroStorage_Start()" & vbCrLf & _
-       "    On Error Resume Next" & vbCrLf & _
-       "    M_Install.InstallToolbarSilent" & vbCrLf & _
-       "End Sub" & vbCrLf & _
-       "Private Sub GlobalMacroStorage_OnApplicationStart()" & vbCrLf & _
-       "    On Error Resume Next" & vbCrLf & _
-       "    M_Install.InstallToolbarSilent" & vbCrLf & _
-       "End Sub"
+If Len(hookFile) = 0 Then hookFile = srcDir & "\_startup.txt"
+code = ""
+If fso.FileExists(hookFile) Then
+  code = ReadUtf8(hookFile)
+Else
+  WScript.Echo "[5] " & fso.GetFileName(hookFile) & " not found - defaulting to no hook"
+End If
+If InStr(1, Trim(code), "--none", vbTextCompare) = 1 Then code = ""
 If docMod.CountOfLines > 0 Then docMod.DeleteLines 1, docMod.CountOfLines
-docMod.AddFromString code
-WScript.Echo "[5] startup handler written, err=" & Err.Number & " " & Err.Description
+If Len(code) > 0 Then docMod.AddFromString code
+If Len(code) > 0 Then
+  WScript.Echo "[5] !! startup hook written (" & Len(code) & " chars) - re-read the WARNING above"
+Else
+  WScript.Echo "[5] startup hook: NONE (ThisDocument left empty)"
+End If
 Err.Clear
 On Error GoTo 0
 
@@ -363,6 +417,16 @@ WScript.Echo "[8] size before=" & sizeBefore & " after=" & sizeAfter
 If sizeAfter <= sizeBefore Then Fail "target did not grow - the save did not land"
 
 If fso.FolderExists(tmpDir) Then fso.DeleteFolder tmpDir, True
+
+If noCheck Then
+  ' --nocheck: the caller wants to launch CorelDRAW by hand and watch
+  ' it, so get out of the way without running anything else.
+  WScript.Echo "[9] --nocheck: skipping the in-session checks"
+  QuitApp
+  WScript.Echo ""
+  WScript.Echo "==== BUILD OK (no-check) ===="
+  WScript.Quit 0
+End If
 
 ' --- 6. run the built-in checks in this very session ---------
 ' A VBA project with any compile error makes every macro fail, so this
@@ -525,6 +589,35 @@ Sub DumpLog(ByVal f, ByVal p, ByVal title)
   st.Close
   WScript.Echo "---- end " & title & " ----"
 End Sub
+
+
+' Hook variants are kept as UTF-8 so they read well on GitHub; VBE wants
+' a plain Unicode string, which is what ReadText hands back.
+Function ReadUtf8(ByVal p)
+  Dim st, t
+  ReadUtf8 = ""
+  On Error Resume Next
+  Err.Clear
+  Set st = CreateObject("ADODB.Stream")
+  st.Type = 2
+  st.Charset = "utf-8"
+  st.Open
+  st.LoadFromFile p
+  t = st.ReadText
+  st.Close
+  If Err.Number <> 0 Then
+    WScript.Echo "!! could not read hook file " & p & " err=" & Err.Number
+    Err.Clear
+    On Error GoTo 0
+    Exit Function
+  End If
+  ' ADODB usually eats the BOM, but not always
+  If Len(t) > 0 Then
+    If AscW(Left(t, 1)) = &HFEFF Then t = Mid(t, 2)
+  End If
+  ReadUtf8 = t
+  On Error GoTo 0
+End Function
 
 
 Function FindSeed()

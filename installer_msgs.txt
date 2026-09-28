@@ -1,6 +1,9 @@
 增强工具
 没有找到 CorelDRAW 的 GMS 目录。\n\n请先安装并运行一次 CorelDRAW X4，然后重新双击本文件。
-安装完成，已写入 {N} 个位置：\n\n{LIST}\n接下来：\n  1) 如果 CorelDRAW 正开着，先关掉它\n  2) 重新打开 CorelDRAW\n  3) 顶部会出现「{TB}」工具栏，9 个按钮直接可用
+安装完成，已写入 {N} 个位置：\n\n{LIST}\n现在打开 CorelDRAW，「{TB}」工具栏会自动出现，9 个按钮直接可用。
 写入失败，可能是权限不足。\n\n{LIST}\n试试右键本文件，选择「以管理员身份运行」。
 [成功]
 [失败]
+插件已经装好，但没能写入 CorelDRAW 的工作区文件，工具栏不会自动出现。\n\n请在 CorelDRAW 里手动装一次工具栏：\n  工具(T) > 宏 > 运行宏 > CDRX4Toolkit > M_Install > InstallToolbar\n或者：工具(T) > 自定义(C) > 命令 > 宏，把 CDRX4Toolkit 的宏拖到工具栏上。\n装过一次之后，工具栏就会一直留在界面上。
+工作区
+注意：检测到 CorelDRAW 正在运行。\n\n请先关闭它，再双击本文件一次 —— CorelDRAW 退出时会覆盖工作区设置，否则「{TB}」工具栏可能不出现。

@@ -45,9 +45,77 @@ Public Sub InstallToolbar()
     InstallCore True
 End Sub
 
-' 静默安装（启动时自动调用）
+' 静默安装（安装器一次性调用）
 Public Sub InstallToolbarSilent()
     InstallCore False
+End Sub
+
+'==========================================================
+' 注册插件命令（只写 CorelDRAW 的命令表，不碰任何 UI）。
+'
+' 为什么每次装工具栏都要注册一遍：按钮上的中文名并不属于按钮自己。
+' CorelDRAW 把工具栏骨架持久化在
+'   User Workspace\CorelDRAW\_default\DRAWUIConfig.xml
+' 里，条目只记「这个按钮绑哪个宏」：
+'   <itemData dynamicCommand="CDRX4Toolkit.M_Curves.ConvertAllToCurves" .../>
+' 标题要在运行时从命令表里查，而命令表本身不持久化。
+'
+' 【不要把它挂回启动钩子】v1.0.2 的启动钩子除了注册命令，还在
+' GlobalMacroStorage_Start 里去建/删 CommandBars，而那时 Corel 的
+' 命令栏框架还没初始化完 —— 每次启动必崩（PLAN §10）。
+' 现在这里只在「安装时」跑一次；按钮标题由安装器写进工作区
+' （userCaption / userToolTip，见下面的 DumpItems）。
+'==========================================================
+Public Sub RegisterCommands()
+    Dim items As Variant
+    Dim i As Long
+
+    items = CmdList()
+    On Error Resume Next
+    For i = LBound(items) To UBound(items)
+        Err.Clear
+        CorelDRAW.AddPluginCommand PRJ_NAME & "." & items(i)(0), items(i)(1), items(i)(2)
+        Err.Clear
+    Next i
+    On Error GoTo 0
+End Sub
+
+'==========================================================
+' 把按钮清单导出到 %TEMP%\cdrx4_toolbar_items.txt（UTF-8），
+' 一行一个，格式：
+'     proc|caption|tooltip
+'
+' 为什么需要：按钮上的中文名不属于按钮自己。CorelDRAW 把工具栏
+' 骨架写进工作区时只记 dynamicCommand（绑哪个宏），不记标题；运行时
+' 注册的命令表又不会持久化。所以安装器要在 CorelDRAW 退出之后，拿
+' 着这份清单往工作区里补 userCaption / userToolTip，重启后按钮才
+' 有中文名和中文提示。
+'
+' 由 VBA 导出、而不是让安装器再抄一份，是为了让按钮清单只有一个
+' 来源（CmdList），两边不会漂移。
+'==========================================================
+Public Sub DumpItems()
+    Dim items As Variant
+    Dim st As Object
+    Dim i As Long
+    Dim s As String
+
+    items = CmdList()
+    For i = LBound(items) To UBound(items)
+        s = s & items(i)(0) & "|" & items(i)(1) & "|" & items(i)(2) & vbLf
+    Next i
+
+    On Error Resume Next
+    Err.Clear
+    Set st = CreateObject("ADODB.Stream")
+    st.Type = 2
+    st.Charset = "utf-8"
+    st.Open
+    st.WriteText s
+    st.SaveToFile Environ$("TEMP") & "\cdrx4_toolbar_items.txt", 2
+    st.Close
+    Err.Clear
+    On Error GoTo 0
 End Sub
 
 Private Sub InstallCore(ByVal showMsg As Boolean)
@@ -58,14 +126,8 @@ Private Sub InstallCore(ByVal showMsg As Boolean)
 
     items = CmdList()
 
-    ' 注册插件命令（重复注册会报错，忽略）
-    On Error Resume Next
-    For i = LBound(items) To UBound(items)
-        Err.Clear
-        CorelDRAW.AddPluginCommand PRJ_NAME & "." & items(i)(0), items(i)(1), items(i)(2)
-        Err.Clear
-    Next i
-    On Error GoTo 0
+    ' 命令注册（重复注册会报错，忽略）
+    RegisterCommands
 
     ' 先删掉旧的再重建。早期版本建出来的工具栏按钮顺序和现在不同，
     ' 只刷新 Caption 会让「按钮名」和「实际动作」错位，所以宁可重建。
@@ -105,6 +167,9 @@ Private Sub InstallCore(ByVal showMsg As Boolean)
         Err.Clear
     Next i
     On Error GoTo 0
+
+    ' 清单落盘，交给安装器在 CorelDRAW 退出后补进工作区
+    DumpItems
 
     If showMsg Then
         MsgBox "工具栏「" & TOOLBAR_NAME & "」安装完成，共 " & (UBound(items) + 1) & " 个功能按钮。", _
@@ -208,6 +273,72 @@ Public Sub DiagToolbar()
             On Error GoTo 0
             log = log & "btn " & i & " caption=[" & cap & "] tooltip=[" & ttl & "] err=" & errNo & vbCrLf
         Next i
+    End If
+
+    log = log & "done" & vbCrLf
+    WriteText fso, logPath, log
+End Sub
+
+'==========================================================
+' 只读探测：报告「工具栏当前是否存在、有几个按钮」，写进
+' %TEMP%\cdrx4_toolbar_state.log。**不创建、不删除任何东西。**
+'
+' 为什么必须单独做一个：DiagToolbar 内部会调 InstallCore，
+' 那会把工具栏顺手建出来，于是「本来就存在」和「刚被建出来」
+' 分不清。要验证「工具栏能不能跨重启保留」，只能用只读的。
+'==========================================================
+Public Sub ReportToolbar()
+    Dim fso As Object
+    Dim cb As Object
+    Dim btn As Object
+    Dim i As Long
+    Dim n As Long
+    Dim log As String
+    Dim logPath As String
+    Dim errNo As Long
+    Dim found As Boolean
+    Dim cap As String
+
+    logPath = Environ$("TEMP") & "\cdrx4_toolbar_state.log"
+    On Error Resume Next
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    On Error GoTo 0
+    If fso Is Nothing Then Exit Sub
+
+    log = "CDRX4Toolkit toolbar state " & Now & vbCrLf
+    log = log & "name=[" & TOOLBAR_NAME & "]" & vbCrLf
+
+    Set cb = Nothing
+    On Error Resume Next
+    Err.Clear
+    Set cb = CorelDRAW.CommandBars(TOOLBAR_NAME)
+    errNo = Err.Number
+    Err.Clear
+    On Error GoTo 0
+
+    found = Not (cb Is Nothing)
+    log = log & "exists=" & CStr(found) & " err=" & errNo & vbCrLf
+
+    n = -1
+    If found Then
+        On Error Resume Next
+        Err.Clear
+        n = cb.Controls.Count
+        Err.Clear
+        On Error GoTo 0
+        log = log & "controls=" & n & vbCrLf
+
+        On Error Resume Next
+        For i = 1 To n
+            cap = ""
+            Set btn = Nothing
+            Err.Clear
+            Set btn = cb.Controls.Item(i)
+            If Err.Number = 0 And Not btn Is Nothing Then cap = btn.Caption
+            Err.Clear
+            log = log & "btn " & i & "=[" & cap & "]" & vbCrLf
+        Next
+        On Error GoTo 0
     End If
 
     log = log & "done" & vbCrLf

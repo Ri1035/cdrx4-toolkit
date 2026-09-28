@@ -1,0 +1,116 @@
+﻿[0] seed   = C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\Emboss.gms
+[0] target = C:\Users\Administrator\AppData\Roaming\Corel\CorelDRAW Graphics Suite X4\User Draw\GMS\CDRX4Toolkit.gms
+[0] re-encoded 12 sources to GBK
+[1] seed copied (previous build kept as .bak)
+    proj 1 name=GlobalMacros file=C:\Program Files (x86)\CorelDRAW X4\Draw\GlobalMacros.gms
+    proj 2 name=CDRX4Toolkit file=C:\Users\Administrator\AppData\Roaming\Corel\CorelDRAW Graphics Suite X4\User Draw\GMS\CDRX4Toolkit.gms
+    proj 3 name=VersionConversion102 file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\�汾ת����.gms
+    proj 4 name=GlobalMacros file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\�鼹����.gms
+    proj 5 name=ToJPG file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\ToJPG.gms
+    proj 6 name=SecuriDesign file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\SecuriDesign.gms
+    proj 7 name=RectangleFixer file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\RectangleFixer.gms
+    proj 8 name=Node123 file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\Node.gms
+    proj 9 name=FitObjectsToPath file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\FitObjects.gms
+    proj 10 name=FileConverter file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\FileConverteren.gms
+    proj 11 name=FileConverter file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\FileConverter.gms
+    proj 12 name=Emboss file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\Emboss.gms
+    proj 13 name=Cachet_���� file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\CorelVbacn_cachetӡ��.gms
+    proj 14 name=ConverTo file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\ConverTo.gms
+    proj 15 name=ColorReplacer file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\ColorReplacer.gms
+    proj 16 name=CalendarWizard file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\CalendarWizard.gms
+    proj 17 name=AIClipboard file=C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\AIClipBrd.gms
+[2] project = CDRX4Toolkit prot=0 comps=13
+[3] comps after cleanup = 1 (after attempt 1)
+[4] comps now = 13 (want 13 = ThisDocument + 12 modules)
+[5] startup handler written, err=0 
+[7] SaveAs err=748 �����������ڴ��๤��������Ч�ġ�
+[7] active project after import = [AIClipboard]
+[7a] try 1.1 save caption=[���� AIClipBrd.gms(&S)]
+[7a] try 1.2 save caption=[���� CDRX4Toolkit.gms(&S)]
+[7b] save err=0 
+[8] size before=54290 after=155666
+[9] running probe ...
+[9] Probe err=0 
+[9] Diag err=0 
+[9] SelfTest err=0 
+[9] DiagToolbar err=0 
+---- diag ----
+diag 2026/9/27 22:39:39
+D1  createDoc      nothing=False  err=0 
+D2  ActiveDocument nothing=False  same=True  err=0
+D3  Documents.Count=1  err=0
+D4  d.Pages.Count=1  err=0
+D5  d.ActivePage   nothing=False  err=0
+D6  ActiveLayer    nothing=False  err=0
+D7  rect           nothing=False  type=1  err=0
+D8  ellipse        nothing=False  type=2  err=0
+D9  text           nothing=False  type=6  err=0
+D10 page 1  shapes=3  err=0
+D11 ����ҳ��=1  err=0
+D12 Shapes.All     nothing=False  count=3  err=0
+   | .Shapes(1) nothing=False  type=6  err=0
+   | .Shapes(2) nothing=False  type=2  err=0
+   | .Shapes(3) nothing=False  type=1  err=0
+D14 curvesCore     n=3  err=0 
+D15 ת���� shapes=3  err=0
+D16 cmykCore       n=3  err=0 
+D17 ClearSelection err=0
+D18 AddToSelection err=0
+D19 SelectionRange nothing=False  count=1  err=0
+D20  sel.Item(1)   nothing=False  type=3  err=0
+D21  .Rectangle    nothing=True  err=-2147024809
+D22 rectCore       n=0  err=0 
+done
+
+---- end diag ----
+---- selftest ----
+CDRX4Toolkit selftest 2026/9/27 22:39:39
+0 create doc   err=0
+0 page/layer   err=0
+0 rect          err=0
+0 ellipse       err=0
+0 text          err=0
+0 fill          err=0
+1 curves        n=3 err=0
+2 cmyk          n=4 err=0
+3 select        err=0
+3 color         n=1 err=0
+4 rect          n=1 err=0
+5 pageno        n=1 err=0
+6 calendar      n=38 err=0
+7 seal          n=4 err=0
+8 select        err=0
+8 fitpath       n=8 err=0
+9 jpg           n=1 err=0
+done
+
+---- end selftest ----
+---- toolbar ----
+CDRX4Toolkit toolbar 2026/9/27 22:39:51
+expect       n=9
+exp 1 caption=[ȫ��ת��] proc=[M_Curves.ConvertAllToCurves]
+exp 2 caption=[תCMYK] proc=[M_CMYK.ConvertToCMYK]
+exp 3 caption=[��ɫ�滻] proc=[M_Color.ReplaceColor]
+exp 4 caption=[��׼����] proc=[M_Rect.StdRectangle]
+exp 5 caption=[�����ʺ�·��] proc=[M_FitPath.FitObjectsToPath]
+exp 6 caption=[JPG��������] proc=[M_JPG.BatchExportJPG]
+exp 7 caption=[����ҳ��] proc=[M_PageNo.InsertPageNumber]
+exp 8 caption=[��������] proc=[M_Calendar.CreateCalendar]
+exp 9 caption=[ӡ������] proc=[M_Seal.CreateSeal]
+install      err=0
+toolbar      found=True  err=0
+controls     n=9
+btn 1 caption=[ȫ��ת��] tooltip=[����ҳ����ı���ͼ��ת��Ϊ����] err=0
+btn 2 caption=[תCMYK] tooltip=[���ĵ��е� RGB ���������ת��Ϊ CMYK] err=0
+btn 3 caption=[��ɫ�滻] tooltip=[ѡ�����������õ�һ������ɫ�滻�ڶ�����] err=0
+btn 4 caption=[��׼����] tooltip=[��ѡ�е�Բ�Ǿ�������Ϊֱ�Ǿ���] err=0
+btn 5 caption=[�����ʺ�·��] tooltip=[��ѡ�еĶ�����һ��·���ֲ�] err=0
+btn 6 caption=[JPG��������] tooltip=[��ҳ�������� JPG] err=0
+btn 7 caption=[����ҳ��] tooltip=[Ϊÿһҳ�ڵײ����в���ҳ��] err=0
+btn 8 caption=[��������] tooltip=[����ָ�����µ�����] err=0
+btn 9 caption=[ӡ������] tooltip=[����Բ��ӡ�£��������� + �����] err=0
+done
+
+---- end toolbar ----
+
+==== BUILD OK ====

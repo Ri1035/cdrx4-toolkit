@@ -263,3 +263,258 @@ X4 内存里已经有一份 CDRX4Toolkit 工程**。旧 `build_gms.vbs` 直接
 - 工作副本：`c:\Users\Administrator\Desktop\Trae\6ab8d877d5fe7a26dc6b47cf\cdrx4-toolkit`
 - 交付副本：`C:\Users\Administrator\Desktop\CDR\cdrx4-toolkit`（43 个文件，与工作副本逐文件 SHA-256 一致）
 - 发给别人只需一个文件：`dist\安装CDRX4增强工具.vbs`
+
+---
+
+# 10. 【严重回归】装上插件后启动 CorelDRAW 直接崩溃（2026-09-28）
+
+> **本节是本次事故的唯一权威记录。上下文被压缩后先读这里，不要重新调研。**
+> 目标版本：修掉它 → v1.0.3。
+
+## 10.1 现象（用户报告）
+
+装上 v1.0.2 的插件后启动 CorelDRAW X4，**几秒后整个 CDR 失去响应**，用户完全无法使用 CDR。
+
+## 10.2 实测：不是「卡死」，是「崩溃」
+
+任务管理器里看到的那个进程是**崩溃后的僵尸**：`0 线程 / 0 句柄 / 0 模块 / ~1 MB 工作集`，
+`Stop-Process -Force` 和 `taskkill /F` 都报 `Access is denied` **杀不掉**（需重启系统才消失）。
+**「0 线程」这一点本身就说明它不是卡死——卡死的进程线程数不为 0。**
+
+真实死因在 Windows 应用程序事件日志（`Application`，来源 `Application Error`，id=1000）：
+
+| 时间（09-28） | 异常码 | 出错模块 | 偏移 |
+|---|---|---|---|
+| 00:54:27 | `0xc0000005` | unknown | `0x0f67b39a` |
+| 00:54:34 | `0xc000041d` | unknown | `0x0f67b39a` |
+| 00:54:47 | `0xc0000005` | `CrlFrmWk.dll` | `0x0004c3f9` |
+| 00:54:53 | `0xc000041d` | `CrlFrmWk.dll` | `0x0004c3f9` |
+| 00:56:28 | `0xc0000005` | unknown | `0x7cb9ff9b` |
+| 00:56:32 | `0xc000041d` | unknown | `0x7cb9ff9b` |
+
+- `0xc0000005` = 访问违规（Access Violation）
+- `0xc000041d` = `STATUS_FATAL_USER_CALLBACK_EXCEPTION`，**用户回调里发生未处理异常**
+- `CrlFrmWk.dll` = Corel Framework，即 Corel 自己的界面框架
+
+「未知模块 + 高地址偏移（`0x7cb9ff9b`）」是 **VBA 运行期回调**的典型特征。
+`GlobalMacroStorage_Start` 正是以**回调**形式进入 CorelDRAW 进程的——我们的宏在启动回调里崩了，
+异常穿透成 `0xc000041d`，CDR 直接死。同一秒内 `0xc0000005` → `0xc000041d` 成对出现，
+是「先踩空内存、再以致命回调异常收场」的标准组合。
+
+## 10.3 对照实验（决定性证据，已做）
+
+| 实验 | 条件 | 结果 |
+|---|---|---|
+| A | 把 `CDRX4Toolkit.gms` 移走（隔离成 `.bak`），**手动**启动 `CORELDRW.EXE` | **完全正常**：13 线程 / 810 句柄 / 111.9 MB / 标题 `CorelDRAW X4 ( 专业版 ) - [图形1]` / 响应正常；观察 60 s **无任何新崩溃事件** |
+
+→ **插件就是元凶。** 不是机器环境、不是 VBA 组件缺失、不是别的插件。
+
+补充排除项：`%APPDATA%\Corel\CorelDRAW Graphics Suite X4\User Draw\GMS\` 里**只有**
+`CDRX4Toolkit.gms` 一个文件；第三方插件（ConverTo / SecuriDesign / Cachet印章 / FitObjects /
+ColorReplacer / RectangleFixer / ToJPG / CalendarWizard …）全在
+`C:\Program Files (x86)\CorelDRAW X4\Draw\GMS\`。
+所以**不存在「和别的插件抢「增强工具」工具栏名」**这条可能。
+
+另注：事件日志里 09-27 18:12 / 18:44 / 18:45 也有 CORELDRW 崩溃，但出错模块与偏移
+（`CorelDrw.dll 0x00011c50`、`CrlFrmWk.dll 0x000a566a`）和本次**完全不同**，
+且时间早于插件首次构建（`build_gms.vbs` 建于 09-27 18:32，`dist\CDRX4Toolkit.gms` 建于 18:54）。
+那批是**我们自己的探针/构建脚本反复 `app.Quit`、强杀 CDR** 造成的，**与本次事故无关**，不要混为一谈。
+
+## 10.4 为什么冒烟测试没抓到（流程漏洞，必须记住）
+
+`tools/smoke.vbs` 第 2 步调用的是 **`M_Install.DiagToolbar`**，
+而 `DiagToolbar` 内部**自己显式调用** `InstallCore False`。
+所以 `_smoke.log` 里那 9 个按钮，是**显式调用**建出来的——
+**它完全不能证明启动钩子跑过，更不能证明启动钩子安全。**
+
+`GlobalMacroStorage_Start` 这条路径**从头到尾没有任何测试覆盖过**。
+而且它在自动化会话（`CreateObject` + `InitializeVBA`）里的行为，和用户手动双击启动 CDR
+时的行为**不一样**，所以「自动化里不崩」**推不出**「手动启动不崩」。
+
+> **红线（写进流程）：凡是只在「启动时」跑的代码，必须用「真的启动 CORELDRW.EXE」来验，
+> 不能用 `RunMacro` / `CreateObject` 验。**
+
+## 10.5 根因（已确认）
+
+启动钩子由 `build_gms.vbs` 第 **242–258** 行写死进 `ThisDocument`：
+
+```vba
+Private Sub GlobalMacroStorage_Start()
+    On Error Resume Next
+    M_Install.InstallToolbarSilent
+End Sub
+Private Sub GlobalMacroStorage_OnApplicationStart()
+    On Error Resume Next
+    M_Install.InstallToolbarSilent
+End Sub
+```
+
+它每次启动都执行这些**重 UI 操作**（`M_Install.InstallCore`）：
+
+1. `CorelDRAW.AddPluginCommand` × 9
+2. `CorelDRAW.CommandBars("增强工具").Delete`
+3. `CorelDRAW.CommandBars.Add("增强工具")`
+4. `cb.Visible = True`
+5. `cb.Controls.AddCustomButton` × 9 + 设 `Caption` / `TooltipText`
+
+**`Start` 事件触发时，Corel 的命令栏 / 界面框架尚未初始化完成。**
+此时删、建 CommandBar 等于从启动回调里重入 Corel 的 UI 框架 →
+在 `CrlFrmWk.dll` 里踩空 → 访问违规 → `0xc000041d` 致命回调异常。
+
+**关键：`On Error Resume Next` 救不了这种情况。**
+访问违规是进程级致命异常，不是 VBA 可捕获错误；钩子里那句 `On Error Resume Next` 形同虚设。
+
+次要隐患：`Start` 与 `OnApplicationStart` **同时挂**，工具栏会被建两遍（删一次建一次 ×2），
+即使不崩也是不稳定源。
+
+**为什么自动化里没崩**：`CreateObject` 起的实例，VBA 初始化时机与界面构建顺序和双击启动不同，
+`Start` 触发时命令栏系统可能已经就绪；双击启动时触发得更早，于是踩空。
+
+## 10.6 决定性实验（已完成，取代原计划的二分定位）
+
+原计划逐条二分「启动期到底哪一步致命」。实际走了一条更直接的路线，结论也更强：
+
+| 实验 | 条件 | 结果 |
+|---|---|---|
+| B | 无启动钩子的 GMS + 工作区里**已有**工具栏标记 | 手动启动 25 s 正常 |
+| C | 无启动钩子的 GMS + 工作区里**没有**工具栏标记 | 手动启动正常，但没有工具栏 |
+| D | `CreateObject` + `CommandBars.Delete / Add / Visible / AddCustomButton`（工作区里没有该工具栏） | **崩**：`CrlFrmWk.dll` `0xc0000005` → `0xc000041d`，留 0 线程僵尸。**复现两次** |
+| E | `workspace_strip.ps1` 剥掉全部标记 → 直接往 `DRAWUIConfig.xml` 注入三段标记 → **手动启动 `CORELDRW.EXE`** 30 s | **PASS**：18 线程 / 115 MB / Responding=True / 新增崩溃事件 0；工具栏出现、9 个中文按钮顺序正确（`_launch_inject.png`） |
+
+**结论**：
+
+1. 致命的是**「在 CorelDRAW 里用 CommandBars API 建工具栏」这件事本身**：
+   启动回调里做会崩（v1.0.2），外部自动化在「该工具栏尚不存在」时做也会崩（实验 D）。
+   这条路彻底放弃，不是「时机不对」，是这条路本身不行。
+2. **纯写工作区 XML 的路线被实验 E 证明可用**：不需要任何 CorelDRAW 自动化，
+   工具栏就能出现、可见、带中文名，且启动不崩。
+3. 实验 E 同时回答了原计划的关键未知项 —— **工具栏确实跨重启保留**，
+   因为它本来就在工作区文件里，跟 CorelDRAW 怎么启动无关。
+
+## 10.7 修复方案（已采纳并实施）
+
+**方案 1（已实施）：删掉启动钩子 + 安装器直接写工作区 XML**
+
+1. `ThisDocument` 里两个启动事件**全部删除** → 启动期零 UI 操作。
+   `src\_startup.txt` = `--none`，`build_gms.vbs` 默认不写启动代码。
+2. 安装器 `安装CDRX4增强工具.vbs` **完全不碰 CorelDRAW**，只做两件事：
+   写 GMS、往 `DRAWUIConfig.xml` 写工具栏三段标记（`itemData` / `commandBarData` /
+   `cmdBarLane` 可见性条目）。实验 D 证明「自动化建工具栏」必须放弃，
+   实验 E 证明「写 XML」已经够用。
+3. 工具栏跨重启保留 —— 已由实验 E 确认。
+4. 兜底：`M_Install.InstallToolbar` 宏 + `Tools > Customization > Commands > Macros`
+   手动拖拽（CorelVBA 等社区方案的标准做法），写进安装器失败提示。
+
+**方案 2（不再需要）**：原计划「保留极轻量钩子」。既然纯写 XML 已经够用，
+钩子没有任何存在价值 —— 它只会是下一个崩溃源。
+
+## 10.8 外部调研结论（用户要求「优先找开源/社区方案」）
+
+已派研究代理检索，结论**偏保守**，如实记录：
+
+- **没找到**「`GlobalMacroStorage_Start` 里建 CommandBars 导致 X4 崩溃」的权威社区记录。
+  只能确认「启动阶段操作 UI/命令栏属高风险时机」，不能援引为已证缺陷。
+- **CorelVBA（hongwenjun/corelvba，蘭雅）的官方安装说明**是：把 `.gms` 放进 GMS 目录 →
+  重启 CDR → `Tools > Customization` → `Commands` 下拉选 `Macros` → **手动把宏拖到工具栏**。
+  即：**成熟开源方案也不在启动事件里自动建工具栏。**
+  <https://corelvba.com/index.php?get=set>
+- CorelVBA 的 `UI/Toolbar.bas` 确实存在（含 Win32 API 声明、`VB_PredeclaredId = True`），
+  但**没有资料显示**它在启动事件里自动建 CommandBars。
+- 官方资料确认：工作区（Workspace）是 **XML 结构**，可导出为 **XSLT**；
+  但**没查到 X4 的具体路径/扩展名/样例**。
+- 有一条相关社区报告：**过大的 GMS 会显著拖慢 Corel 启动**
+  <https://coreldraw-sandbox.ideas.aha.io/ideas/CDGS-I-1172>（本包 155 KB，不算大，仅供参考）
+- **没查到** X4 VBA 里有可靠的「延迟执行」机制（无 OnTime/Timer 之类），
+  所以「让钩子晚点跑」这条路走不通。
+
+**结论：方案 1 与社区实践一致，是首选。**
+
+## 10.9 本次已执行的动作（可回滚）
+
+| 动作 | 说明 |
+|---|---|
+| 隔离插件 | `%APPDATA%\Corel\CorelDRAW Graphics Suite X4\User Draw\GMS\CDRX4Toolkit.gms` → 改名 `.bak`。**用户现在可以正常用 CDR。** |
+| 僵尸进程 | PID 15148 是崩溃残留，`taskkill /F` 报 Access denied，**需重启系统才消失**；不影响使用，但会占一个进程位 |
+| 用户可见状态 | CDR 已恢复正常启动（实验 A 验证过） |
+
+## 10.10 待办清单（全部完成）
+
+- [x] §10.6 定位致命步骤 → 结论：CommandBars API 这条路本身不行（实验 D）
+- [x] 验证「工具栏是否跨重启保留」→ 保留（实验 E）
+- [x] 改 `build_gms.vbs`：启动钩子从 `src\_startup.txt` 读取，默认 `--none`
+- [x] 改 `安装CDRX4增强工具.vbs`：不再启动 CDR，改为写工作区 XML
+- [x] 重建 GMS + 冒烟 + **新增「真实双击启动不崩」这一条**（`tools/real_launch_test.ps1`）
+- [x] 版本号 → v1.0.3，写更新记录（`CHANGELOG.md` + README §九）；README 里
+      「启动时自动出现工具栏」「启动钩子」等说法已改
+- [ ] 本地验证通过 → 用户确认 → 推送 GitHub
+
+## 10.11 最终验证记录（v1.0.3，2026-09-28）
+
+**端到端模拟一台干净机器**（顺序即实际执行顺序）：
+
+| 步骤 | 命令 | 结果 |
+|---|---|---|
+| 1 | `tools\workspace_strip.ps1 -Report` | `items=9 userCaption=49 bytes=390623 bom=False` |
+| 2 | `tools\workspace_strip.ps1` | `stripped 9 itemData and 1 commandBarData` → `items=0 bytes=387477` |
+| 3 | `cscript _test_silent.vbs` | 296 ms；写 GMS ×1，写工作区 ×2（`_default` + `Adobe(R) Illustrator(R)`） |
+| 4 | 三处标记核对 | `itemData`=9、`commandBarData`=1、`cmdBarLane` 可见性=1、`userCaption`=9、重复属性=0、XML 合法、`bom=False`、**字节数 390623（与修复前已验证状态逐字节相同）** |
+| 5 | 再跑一次安装器（幂等性） | 工作区 SHA-256 **完全一致**，条目数不变 |
+| 6 | `tools\real_launch_test.ps1 -WaitSec 30` | `==== LAUNCH PASS ====`：18 线程 / 811 句柄 / 115.0 MB / Responding=True / **新增崩溃事件 0**；截图 `_launch_v103_final.png` 里「增强工具」工具栏 9 个中文按钮齐全、顺序正确 |
+
+**GMS 内容核对**：`Private Sub GlobalMacroStorage` 命中 **0** 次
+（唯一的 1 次 `GlobalMacroStorage_Start` 出现在 `M_Install.bas` 的注释里），
+即装到机器上的 GMS **确实不含启动钩子**。
+
+GMS SHA-256：`403F8B2E1E50A6E0BF8F5011A486FF4CB895F1CB86409E588C1F9BB7C00904CA`（163858 字节）
+
+**尚未覆盖的一项**：按钮**点击**后宏是否被执行。依据是：这份标记与 CorelDRAW
+自己在「工具 > 自定义 > 命令 > 宏」里拖拽生成的一模一样（`dynamicCategory` 与
+内置 `GlobalMacros.*` 宏按钮同属 `2cc24a3e-…`），且 9 条宏路径本身已由冒烟验证存在
+（`M_Test.SelfTest` 全 `err=0`）。仍建议人工点一遍做视觉验收。
+
+**遗留环境问题**：崩溃过的机器上会残留 0 线程僵尸 `CorelDRW.exe`，
+`Stop-Process -Force` / `taskkill /F` 都报 Access denied，**需重启系统**才消失。
+不影响新启动的 CDR，也不影响安装器（安装器用 `Win32_Process.ThreadCount > 0` 判断
+「CDR 是否真的在运行」，不会被僵尸误判）。
+
+---
+
+## 11. v1.1.0 新增卸载器（2026-09-28）
+
+### 11.1 为什么需要
+
+装了 v1.0.2 的设备上 CDR 会卡死，要重装就得先把旧版清干净。旧版只留了「手工删 GMS + 右键删工具栏」
+两步文档，对着一台 CDR 已经卡死的机器并不好操作 —— 而且工具栏标记还留在工作区里，
+删掉 GMS 后会剩下一排点不动的死按钮，看起来像「卸载失败」。
+
+### 11.2 设计约束（沿用 v1.0.3 的红线）
+
+1. **不碰 CorelDRAW**。不 CreateObject CorelDRAW ProgID，不碰 CommandBars ——
+   §10.6 实验 D 已证明「用 CommandBars API 建/删工具栏」这条路本身会崩，删也一样危险。
+2. **不认版本号**。v1.0.2 的工具栏是 CommandBars API 建的，guid 由 CorelDRAW 随机分配，
+   硬编码 guid 根本找不到它。所以定位只用两个稳定特征：
+   - `<itemData>` 的 `dynamicCommand` 里含 `CDRX4Toolkit`；
+   - `<commandBarData>` 的 `nonLocalizableName` / `userCaption` 是「增强工具」。
+
+   骨架的 guid 从**被删的那个骨架块里现读**，再拿它去删 `<cmdBarLane>` 里对应的可见性条目。
+3. **CDR 在跑就拒绝执行**。CDR 退出时会用自己的设置覆盖工作区文件，边运行边改会被冲掉。
+   判据用 `ThreadCount > 0`，这样 0 线程的崩溃僵尸不会被误判成「正在运行」——
+   否则最需要这台脚本的机器反而跑不起来。
+4. **改前校验 + 无 BOM 写回**。XML 合法性走临时文件校验（尊重文件头的 encoding 声明），
+   不合法就不落盘；备份到 `.uninstallbak`。
+
+### 11.3 实测（本机，X4）
+
+| 步骤 | 结果 |
+|---|---|
+| 安装态基线 | `gms=True`，`items=9`，`_default` 390679 字节（CDR 退出时自己重写过一次，原 390623） |
+| 跑 `_uninstall_silent.vbs` | GMS 删除成功；两个工作区 `items` 9→**0**、`bar` 1→**0**；XML 仍合法；无 BOM；`.uninstallbak` 已生成 |
+| 重跑安装器 | `items=9`、`bar=1`、重复属性 0、XML 合法、无 BOM；`_default` **回到 390623 字节**（与 §10.11 已验证状态逐字节相同）→ 往返无残留 |
+| 内嵌文案完整性 | 两个 .vbs 的 base64 解码后与 `.txt` 源**逐字符相同**（487 / 423 字符） |
+| 生成物编码 | 两个 .vbs 非 ASCII 字符 **0** 个 |
+
+**GMS 未改动**：SHA-256 `403F8B2E1E50A6E0BF8F5011A486FF4CB895F1CB86409E588C1F9BB7C00904CA`（163858 字节），与 v1.0.3 相同 —— 已装 v1.0.3 的设备不用重装。
+
+### 11.4 待办
+
+- [ ] 用户确认 → 推送 GitHub
