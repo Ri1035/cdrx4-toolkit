@@ -11,7 +11,7 @@ Option Explicit
 '    2. drop its components and import every module in src\
 '    3. write the startup handler into ThisDocument
 '    4. save as CDRX4Toolkit.gms in the X4 user GMS folder
-'    5. run M_Test.Probe / Diag / SelfTest and M_Install.DiagToolbar
+'    5. run M_Test.Probe / Diag / SelfTest and M_Install.DumpItems
 '
 '  WHY CORELDRAW IS RESTARTED FIRST
 '  X4 auto-loads every GMS under User Draw\GMS at startup, so a running
@@ -34,7 +34,7 @@ Option Explicit
 
 Dim fso, sh, here, srcDir, tmpDir, seed, tgt, bak
 Dim mods, k, i, c, p, app, vbe, docMod, code, fm, saveCtl, cp
-Dim logPath, res, probePath, diagPath, toolbarPath
+Dim logPath, res, probePath, diagPath, itemsPath
 Dim activeName, tries, activated, sizeBefore, sizeAfter, want, hits, saved
 Dim attempt, docCount, dirty, waited, fails, bad, cap, m
 
@@ -441,11 +441,11 @@ End If
 logPath     = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_selftest.log"
 probePath   = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_probe.log"
 diagPath    = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_diag.log"
-toolbarPath = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_toolbar.log"
+itemsPath   = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_toolbar_items.txt"
 If fso.FileExists(logPath) Then fso.DeleteFile logPath, True
 If fso.FileExists(probePath) Then fso.DeleteFile probePath, True
 If fso.FileExists(diagPath) Then fso.DeleteFile diagPath, True
-If fso.FileExists(toolbarPath) Then fso.DeleteFile toolbarPath, True
+If fso.FileExists(itemsPath) Then fso.DeleteFile itemsPath, True
 
 WScript.Echo "[9] running probe ..."
 On Error Resume Next
@@ -459,20 +459,20 @@ Err.Clear
 res = app.GMSManager.RunMacro("CDRX4Toolkit", "M_Test.SelfTest")
 WScript.Echo "[9] SelfTest err=" & Err.Number & " " & Err.Description
 Err.Clear
-res = app.GMSManager.RunMacro("CDRX4Toolkit", "M_Install.DiagToolbar")
-WScript.Echo "[9] DiagToolbar err=" & Err.Number & " " & Err.Description
+res = app.GMSManager.RunMacro("CDRX4Toolkit", "M_Install.DumpItems")
+WScript.Echo "[9] DumpItems err=" & Err.Number & " " & Err.Description
 Err.Clear
 On Error GoTo 0
 
 For i = 1 To 30
   If fso.FileExists(probePath) And fso.FileExists(logPath) And _
-     fso.FileExists(diagPath) And fso.FileExists(toolbarPath) Then Exit For
+     fso.FileExists(diagPath) And fso.FileExists(itemsPath) Then Exit For
   WScript.Sleep 500
 Next
 
 DumpLog fso, diagPath, "diag"
 DumpLog fso, logPath, "selftest"
-DumpLog fso, toolbarPath, "toolbar"
+DumpLog fso, itemsPath, "items"
 
 If fso.FileExists(bak) Then fso.DeleteFile bak, True
 

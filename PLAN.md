@@ -575,3 +575,172 @@ GMS SHA-256：`403F8B2E1E50A6E0BF8F5011A486FF4CB895F1CB86409E588C1F9BB7C00904CA`
 ## 12.5 待办
 
 - [x] 用户确认 → 推送 GitHub（commit `aa688ec`）
+
+---
+
+# 13. v1.3.0 工具栏改「一图标 + 展开菜单」+ 三大处理功能打磨（2026-10-08）
+
+## 13.0 本轮需求（用户原话）
+
+1. 「图标你优化一下，然后一个图标就好，改为点击展开菜单展开」——
+   工具栏从 **9 个平铺按钮** 改成 **1 个图标按钮，点击展开 flyout 菜单**，菜单里放 9 项功能。
+2. 「只优化转曲 cmyk 颜色替换就好了」——功能打磨只做 `M_Curves` / `M_CMYK` / `M_Color`。
+3. 「对话框显示逻辑和操作逻辑也优化一下」。
+4. 「一并做好卸载那个」。
+5. 「做好版本管理和日志记录以及计划文档避免上下文淹没」——即本节 + CHANGELOG + logs。
+
+`morluto/rea`（17.6k★，AI 逆向 MCP）已评估：**不引入**。它面向原生二进制 / Electron /
+.NET / 网站，没有 VBA/GMS 通道，读不了加密 GMS，也解决不了「按行为重实现」的差距来源。
+
+## 13.1 已核实的技术事实（**不要再重新探测**）
+
+来源：本机 `_default\DRAWUIConfig.xml`，证据落 `_flyout_probe.txt` / `_flyout_probe2.txt`。
+
+**X4 的 flyout（点击展开菜单）是纯 XML，三件套：**
+
+1. **展开按钮**的 `itemData` —— 挂在普通工具栏里，**没有 `dynamicCommand`**（它不绑宏，只负责展开）：
+
+   ```xml
+   <itemData guid="70b2cbe1-..." flyoutBarRef="bc8dcf78-..." bmpCol="0" bmpRow="1031"
+             captionRef="bc6d3e54-..." tooltipRef="bc6d3e54-..."
+             userCreated="true" userToolTip="增强插件" userCaption="增强插件"/>
+   ```
+
+2. **flyout 栏本体** —— 比普通工具栏多一个 `flyout="true"`，其余同构：
+
+   ```xml
+   <commandBarData guid="bc8dcf78-..." type="toolbar" nonLocalizableName="新工具栏 2"
+                   userCaption="新工具栏 2" userCreated="true" flyout="true">
+       <container floatWidth="146">
+           <item guidRef="..."/>   <!-- 子按钮，就是普通 itemData，照旧带 dynamicCommand -->
+       </container>
+   </commandBarData>
+   ```
+
+3. **主工具栏**的 `commandBarData` 里只放**展开按钮的 guidRef**；可见性仍是主工具栏自己那条
+   `<commandBar guidRef="<主栏 guid>" floatX floatY visible="true"/>`。
+
+**真实参照**：本机「我的工具」栏（guid `3a7425b9-...`）里 6 个 item，其中 3 个是展开按钮
+（`增强插件` / `排版` / `转换`），各自 `flyoutBarRef` 指向一个 `flyout="true"` 的栏。
+
+**图标机制**：`bmpCol` / `bmpRow` 是 **X4 内置图标条**的坐标，不需要外部位图。
+已观测：`(0,1031)` = 参考插件展开按钮用的图标；`(7,1022)` = 我们现在 9 个按钮用的通用图标。
+
+## 13.2 实施方案
+
+### 第一步：工具栏结构改造（XML 路线，不碰自动化）
+
+`workspace_markup.txt` 从「9 个 itemData + 1 个 commandBarData」改成「10 个 itemData
+（9 功能 + 1 展开按钮）+ 2 个 commandBarData（主栏只放展开按钮 / flyout 栏放 9 功能）」。
+`M_Install.CmdList()` 仍是唯一的按钮清单来源（顺序不变），展开按钮不占清单条目。
+
+**为什么不走 `CommandBars` API**：`installer_template.txt` 顶部已记录，自动化路线
+（`Delete`/`Add`/`Visible`/`AddCustomButton`）在 X4 上复现过崩溃（CrlFrmWk.dll，0xc0000005 →
+0xc000041d，留下 0 线程僵尸）。工作区是纯 XML，照写即可。
+
+### 第二步：卸载器的缺口（**必改，否则卸不干净**）
+
+`installer_template.txt` 的 `StripToolkit()` 现在只删两类东西：按 guid/名字删
+`commandBarData`、按 `dynamicCommand="CDRX4Toolkit.*"` 删 `itemData`。
+**展开按钮没有 `dynamicCommand`，会漏删**，卸载后工具栏里留一个点不动的死按钮。
+
+改法：识别条件加一条 —— `flyoutBarRef` 指向我们自己的 flyout 栏 guid 的 `itemData` 也要删。
+卸载器（`uninstaller_template.txt`）同样要按这套规则清干净。
+
+### 第三步：图标优化
+
+`bmpCol`/`bmpRow` 取值靠**枚举 + 截图**定（写个 probe：造一排不同坐标的按钮 → 启动 X4 →
+截图 → 挑）。候选先按「语义接近」猜，最终以截图为准。
+
+### 第四步：三个功能模块打磨（`M_Curves` / `M_CMYK` / `M_Color`）
+
+- 对话框逻辑：现在 38 处 `MsgBox`/`InputBox` 各自为政，措辞、默认值、取消语义都不统一；
+  重点修「转曲」那个把「取消」借来表示第三种范围的弹窗（用户必须看说明才敢点）；
+- 操作逻辑：多对象、无选中、已转曲对象、位图混入等边界统一处理，报错信息说清「怎么办」。
+
+## 13.3 风险与回滚
+
+| 风险 | 缓解 |
+|---|---|
+| 工作区文件是**多个插件共用**的，写坏会打乱用户所有工具栏 | 改前先整份备份 `DRAWUIConfig.xml`（不止 `.cdrx4bak`）；写完必须 XML 解析通过才落盘 |
+| CorelDRAW 运行时会在退出时**覆盖**工作区 | 安装/卸载一律要求 CDR 已退出（安装器已有 `CorelRunning()` 检测） |
+| flyout 结构写错 → 工具栏消失或按钮点不动 | 先只改工作区、GMS 不动；失败就还原备份 |
+| 图标坐标选错 → 图标难看或空白 | 截图确认后再定稿 |
+
+## 13.4 验收标准
+
+1. 工具栏只剩 **1 个按钮**，点一下展开 9 项菜单，9 项都能跑；
+2. 卸载后工作区里**没有**残留（主栏 / flyout 栏 / 10 个 itemData / lane 条目全清）；
+3. 三层验证全过：`build_gms.vbs`（err=0）→ `smoke.vbs` → `real_launch_test.ps1`（LAUNCH PASS）；
+4. 转曲 / CMYK / 颜色替换 的对话框与边界行为逐条过一遍并记录；
+5. CHANGELOG / README / 本节同步。
+
+## 13.5 待办清单（全部完成）
+
+- [x] 备份当前 `DRAWUIConfig.xml` —— `_ws_backup_v130_roundtrip.xml` / `_ws_before_dock.xml`
+- [x] 改 `workspace_markup.txt`：1 展开按钮 + 1 flyout 栏（主栏只剩展开按钮）
+- [x] 改 `installer_template.txt` / `uninstaller_template.txt`：识别并清理展开按钮与 flyout 栏
+- [x] 图标枚举 probe + 截图选图标 —— 展开按钮定 `(0,1031)`（`_ourbtn_zoom.png` 确认）
+- [x] `M_Curves` / `M_CMYK` / `M_Color` 打磨
+- [x] 重出安装器 + 三层验证
+- [x] CHANGELOG v1.3.0 / README 功能表 / 本节验证记录
+- [ ] 用户确认 → 推送 GitHub（等用户确认）
+
+## 13.6 验证记录（本机，CorelDRAW X4，2026-10-08）
+
+三层验证 + 装卸往返，全部通过。命令与产物：
+
+| # | 项 | 命令 | 结果 |
+|---|---|---|---|
+| 1 | 编译 + 自检 | `cscript //nologo build_gms.vbs` | `==== BUILD OK ====`；`M_Test.SelfTest` 全 `err=0`（含 `1b scope text/shape/all` = 1/3/0，与期望一致）；`M_Install.DumpItems` 输出 9 条按钮清单 |
+| 2 | 按钮清单交叉验证 | `tools\verify_toolbar.ps1` | GMS `CmdList` 与 `workspace_markup.txt` 的 9 条宏绑定逐条一致 |
+| 3 | 真实启动（装好后） | `tools\real_launch_test.ps1 -WaitSec 35` | 35 s 内 `NEW Application Error = 0`，进程 `Responding=True` → **LAUNCH PASS**（跑了 3 次，含最终产物那次，均 PASS） |
+| 4 | 装卸往返 · 卸载 | `cscript //nologo _uninstall_silent.vbs` → `verify_toolbar.ps1 -Expect absent` | 两个工作区文件（`_default` 与 `Adobe(R) Illustrator(R)`）均 **VERIFY PASS (absent)**：10 个 itemData / 2 个 commandBarData / 2 个栏名 / 9 条宏绑定 **全部清零**，展开按钮无残留 |
+| 5 | 装卸往返 · 安装 | `cscript //nologo _test_silent.vbs` → `verify_toolbar.ps1 -Expect present` | **VERIFY PASS (present)**：10 个 itemData guid 齐、两个骨架在、flyout 栏 `flyout="true"`、展开按钮接线正确、主栏只引用展开按钮、flyout 栏按序列 9 项、可见性条目在、9 条宏绑定按序在 |
+| 6 | **持久性**（关键） | 真实启动 → 正常退出 CorelDRAW → 再验 | 退出后工作区仍是 `items=9 bars=2`，`verify_toolbar.ps1 -Expect present` 仍 **PASS** —— 证明 flyout 工具栏被 CorelDRAW 正常持久化，重启后「打开就在」 |
+| 7 | 菜单展开（视觉） | `tools\click_at.ps1` + 截图 | `_our1_crop.png` / `_rt3_menu_crop.png`：点「增强工具」展开 9 项菜单（全部转曲 → … → 印章制作），图标与中文标题正常 |
+
+**产物**：`dist\CDRX4Toolkit.gms`（166418 字节，SHA-256 `4B17BD79…AB740B`）、
+`dist\安装CDRX4增强工具.vbs`（252117 字节）、`dist\卸载CDRX4增强工具.vbs`（18037 字节），
+两个 `.vbs` 均纯 ASCII。
+
+> **GMS 构建不是逐字节可复现的**（同一份源码两次构建字节数会差约 1 KB，疑似含时间戳）。
+> 所以「产物哈希」只对本轮最终产物有效，换机器重编会变 —— 验收请以三层验证结果为准，而不是哈希。
+
+**注意**：`build_gms.vbs` 会拉起 CorelDRAW，跑完不一定自动退出。**再跑安装/卸载器前必须先确认
+CorelDRAW 已退出**，否则卸载器的安全闸门会拒绝改工作区（本次就撞到过一次：`verify absent` 报 16 处残留，
+实为 CDR 仍在运行）。这是设计行为，不是 bug。
+
+## 13.7 三个功能模块改动明细（`M_Curves` / `M_CMYK` / `M_Color`）
+
+改的只有**对话框语义**与**边界提示**，纯逻辑函数（`*Core`）签名保持兼容，`M_Test` 自检不受影响。
+
+### `M_Curves.bas`（转曲）
+
+- **范围选择**由 `MsgBox(是/否/取消)` 改为 `InputBox` 编号选择：
+  `1 = 文字 + 图形` / `2 = 只转文字` / `3 = 只转图形`；**「取消」= 放弃**。
+  旧做法把「取消」借来表示「仅图形」，用户必须先读说明才敢点 —— 这是本轮修掉的主要可用性问题。
+- **深度选择**仍是 `MsgBox`，但把「取消」明确成「放弃，什么都不做」。
+- 新增 **零结果提示**：`n=0` 时列出三条可能原因（范围内没有可转对象 / 已是曲线 / 容器内未处理）。
+- `AskScope()` / `AskDeep()` 返回 `-1` 表示放弃，`ConvertAllToCurves()` 据此提前 `Exit Sub`。
+- `ConvertAllToCurvesCore(deep, Optional scope = SCOPE_ALL)` —— `scope` 可选，旧的
+  `ConvertAllToCurvesCore(True)` 调用照旧有效。
+
+### `M_CMYK.bas`（转 CMYK）
+
+- 对话框把两个选项写清：`是 = 转 CMYK 并给纯黑加叠印` / `否 = 只转 CMYK 不动叠印` / `取消 = 不做`。
+  并**明确纯黑定义**为 `C0 M0 Y0 K100`（`IsPureBlack()`），避免用户误以为任意黑都加叠印。
+- 新增 **零结果提示**：`n=0` 时说明「填充/轮廓可能本来就是 CMYK，或无填充 / 渐变 / 位图」。
+
+### `M_Color.bas`（颜色替换）
+
+- **取色来源扩展**：`PickColor()` 优先取**纯色填充**，没有纯色填充时退回**轮廓色**；
+  两者都没有（透明矩形 / 位图）才算取色失败。失败提示里写清「哪种对象不能当色源」。
+- **方向确认**：选中顺序 ≠ 点击顺序，所以取到两个颜色后弹 `InputBox`：
+  `1 = 按「第 1 个=原色、第 2 个=新色」替换` / `2 = 反过来`；**「取消」= 什么都不做**。
+- 新增 **同色提示**（两对象颜色相同，无可替换）与 **零结果提示**（`n=0` 时列出三条原因：
+  文档本没有该色 / 用了渐变·位图·图案 / 该色只在别的页面或容器内）。
+- `DescribeColor()` 把颜色打印成人可读串，所有提示都带上「原色 → 新色」。
+
+> 自检覆盖：`M_Test` 的 `1b scope text/shape/all` 覆盖转曲三种范围；`2 cmyk` / `3 color` 覆盖
+> 另两个功能的 `*Core` 逻辑。对话框本身无法自动化，靠人工点一遍验收（见 README「建议人工验收的点」）。

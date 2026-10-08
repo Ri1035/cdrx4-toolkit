@@ -43,7 +43,7 @@ Dim MSG_B64
 MSG_B64 = "" & _
 @@MSGB64CHUNKS@@
 
-Dim M, gFso, gSh, gBar, gList(200), gN
+Dim M, gFso, gSh, gBar, gMenu, gList(200), gN
 
 Call Main()
 
@@ -55,6 +55,7 @@ Sub Main()
     Set gSh  = CreateObject("WScript.Shell")
     LoadMessages
     gBar = M(0)
+    gMenu = M(8)
     gN = 0
 
     ' CorelDRAW would overwrite the workspace file on exit, so there
@@ -162,18 +163,25 @@ End Function
 '------------------------------------------------------------
 ' Remove the toolbar a previous install left in the workspace.
 '
-' Three things have to go, and the guids are read out of the file
+' Four things have to go, and the guids are read out of the file
 ' rather than hard-coded, because the old build created the toolbar
 ' through the CommandBars API and CorelDRAW then assigned it a
 ' random guid:
 '
-'   1. the <itemData> button bindings - matched on the macro name,
-'      which is the one thing that is ours no matter who created
-'      the toolbar;
-'   2. the <commandBarData> skeleton - matched on any of those
-'      button guids, or on our toolbar name;
+'   1. the <commandBarData> skeletons - matched on any of our button
+'      guids, or on our toolbar name.  Both bars are covered: the
+'      visible bar carries the toolbar name, and the flyout bar
+'      (flyout="true", a name of its own) lists our nine buttons;
+'   2. the flyout opener - an <itemData> with NO dynamicCommand that
+'      only carries flyoutBarRef pointing at a bar removed in step 1.
+'      Matching on the macro name alone would leave it behind as a
+'      dead button, which is exactly what a v1.2.0 install upgrades
+'      into;
 '   3. the <commandBar guidRef=...> visibility entry for each
-'      skeleton removed in step 2.
+'      skeleton removed in step 1;
+'   4. the <itemData> button bindings - matched on the macro name,
+'      which is the one thing that is ours no matter who created the
+'      toolbar.
 '------------------------------------------------------------
 Function StripToolkit(xml)
     Dim out, re, ms, guids(60), ng, barGuids(60), nb
@@ -202,7 +210,7 @@ Function StripToolkit(xml)
         Next
     End If
 
-    ' the toolbar skeleton, and the guids of the ones we drop
+    ' the toolbar skeletons, and the guids of the ones we drop
     nb = 0
     i = 1
     Do While True
@@ -219,6 +227,10 @@ Function StripToolkit(xml)
         Next
         If InStr(1, block, "nonLocalizableName=""" & gBar & """", vbTextCompare) > 0 Then hit = True
         If InStr(1, block, "userCaption=""" & gBar & """", vbTextCompare) > 0 Then hit = True
+        If Len(gMenu) > 0 Then
+            If InStr(1, block, "nonLocalizableName=""" & gMenu & """", vbTextCompare) > 0 Then hit = True
+            If InStr(1, block, "userCaption=""" & gMenu & """", vbTextCompare) > 0 Then hit = True
+        End If
 
         If hit Then
             g = FirstAttr(block, "guid")
@@ -231,6 +243,12 @@ Function StripToolkit(xml)
             i = e + 1
         End If
     Loop
+
+    ' the flyout opener: an itemData with no dynamicCommand that points
+    ' at one of the flyout bars just removed
+    For g = 0 To nb - 1
+        out = ReReplace(out, "<itemData\s+[^>]*flyoutBarRef=""" & ReEsc(barGuids(g)) & """[^>]*/>", "")
+    Next
 
     ' the visibility entries for the toolbars just removed
     For g = 0 To nb - 1

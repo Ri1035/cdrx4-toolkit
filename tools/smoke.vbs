@@ -10,8 +10,12 @@ Option Explicit
 '    0. restart CorelDRAW so it re-reads User Draw\GMS
 '    1. is the project loaded, with all 13 components and a
 '       component named exactly M_Install?
-'    2. does M_Install.DiagToolbar build 9 Chinese buttons?
+'    2. does M_Install compile and hand out its 9-button list?
 '    3. do the nine features actually run (M_Test.SelfTest)?
+'
+'  The toolbar itself is NOT built here any more.  It is pure workspace
+'  XML written by the installer, so it is checked by
+'  tools\verify_toolbar.ps1 reading DRAWUIConfig.xml (PLAN.md section 13).
 '
 '  Result -> _smoke.log (UTF-16) and stdout.
 '
@@ -21,7 +25,7 @@ Option Explicit
 
 Dim fso, sh, root, logPath, gLog, st
 Dim app, vbe, p, c, i, found, fn, cnt, n, hasInstall
-Dim tgt, selLog, toolLog, fails, lines, selTxt, exp, obs, got
+Dim tgt, selLog, fails, lines, selTxt, itemsPath, itemsTxt, nItems, bad, a, proc
 Dim waited, docCount, dirty
 
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -167,69 +171,69 @@ Else
   End If
 End If
 
-' --- 2. toolbar, verified from inside VBA ---------------------
-' X4 does not hand CommandBars to an external automation client
-' (app.CommandBars(name) comes back as Nothing with err 13), so the
-' toolbar has to be inspected by the macro that built it.
+' --- 2. M_Install compiles, and its button list is intact -----
+' M_Install owns the canonical button list (CmdList) and is the module
+' the old build reached from a startup hook, so a compile error in it
+' would be invisible to the feature test below -- VBA compiles on
+' demand.  DumpItems is called explicitly for that reason.  Its output
+' is also what tools\verify_toolbar.ps1 compares the workspace markup
+' against, so the two halves of the toolbar cannot drift.
+'
+' The toolbar is NOT built here: it is pure workspace XML written by
+' the installer while CorelDRAW is closed (PLAN.md section 13).
 W ""
-W "--- 2. toolbar ---"
-toolLog = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_toolbar.log"
-If fso.FileExists(toolLog) Then fso.DeleteFile toolLog, True
+W "--- 2. M_Install ---"
+itemsPath = sh.ExpandEnvironmentStrings("%TEMP%") & "\cdrx4_toolbar_items.txt"
+If fso.FileExists(itemsPath) Then fso.DeleteFile itemsPath, True
 
 On Error Resume Next
 Err.Clear
-app.GMSManager.RunMacro "CDRX4Toolkit", "M_Install.DiagToolbar"
-W "DiagToolbar err=" & Err.Number & " " & Err.Description
+app.GMSManager.RunMacro "CDRX4Toolkit", "M_Install.DumpItems"
+W "DumpItems err=" & Err.Number & " " & Err.Description
 Err.Clear
 On Error GoTo 0
 
 For i = 1 To 30
-  If fso.FileExists(toolLog) Then Exit For
+  If fso.FileExists(itemsPath) Then Exit For
   WScript.Sleep 500
 Next
 
-If Not fso.FileExists(toolLog) Then
-  W "FAIL: no toolbar log - M_Install.DiagToolbar never ran (compile error?)"
+If Not fso.FileExists(itemsPath) Then
+  W "FAIL: no items file - M_Install.DumpItems never ran (compile error?)"
   fails = fails + 1
 Else
-  Set st = fso.OpenTextFile(toolLog, 1, False, -1)
-  W "---- toolbar log ----"
-  W st.ReadAll
-  st.Close
+  ' the file is UTF-8 without a BOM.  Decode it as UTF-8 explicitly:
+  ' reading it as ANSI on a CJK codepage mis-pairs the trailing byte of a
+  ' multi-byte character with the following LF, which merges lines and
+  ' undercounts the buttons (seen: 9 -> 6).
+  itemsTxt = ReadUtf8(itemsPath)
+  W "---- items ----"
+  W itemsTxt
   W "---- end ----"
 
-  ' Button order and Chinese captions come from M_Install.CmdList().
-  ' DiagToolbar writes both the expected list and the buttons it actually
-  ' built into the same log, so this reads one file in one encoding --
-  ' no more parsing src\M_Install.bas across encodings.
-  Set exp = CreateObject("Scripting.Dictionary")
-  Set obs = CreateObject("Scripting.Dictionary")
-  FillCaptions toolLog, "exp ", exp
-  FillCaptions toolLog, "btn ", obs
-  W "expected " & exp.Count & " / built " & obs.Count
-
-  If exp.Count = 0 Then
-    W "FAIL: the toolbar log carries no expected captions"
-    fails = fails + 1
-  ElseIf obs.Count = 0 Then
-    W "FAIL: the toolbar log carries no built buttons"
-    fails = fails + 1
-  Else
-    W "observed = " & obs.Count & " button(s), expected = " & exp.Count
-
-    If obs.Count <> exp.Count Then
-      W "FAIL: expected " & exp.Count & " buttons, saw " & obs.Count
-      fails = fails + 1
-    End If
-
-    n = exp.Count - 1
-    If obs.Count - 1 < n Then n = obs.Count - 1
-    For i = 0 To n
-      If obs.Item(i) <> exp.Item(i) Then
-        W "FAIL: btn " & (i + 1) & " caption should be [" & exp.Item(i) & "] but is [" & obs.Item(i) & "]"
-        fails = fails + 1
+  nItems = 0
+  bad = 0
+  lines = Split(itemsTxt, vbLf)
+  For i = 0 To UBound(lines)
+    If Len(Trim(lines(i))) > 0 Then
+      nItems = nItems + 1
+      a = InStr(lines(i), "|")
+      If a = 0 Then
+        bad = bad + 1
+      Else
+        proc = Left(lines(i), a - 1)
+        If InStr(proc, ".") = 0 Then bad = bad + 1
       End If
-    Next
+    End If
+  Next
+  W "items = " & nItems
+  If nItems <> 9 Then
+    W "FAIL: expected 9 buttons in CmdList, saw " & nItems
+    fails = fails + 1
+  End If
+  If bad > 0 Then
+    W "FAIL: " & bad & " malformed item line(s) in the dump"
+    fails = fails + 1
   End If
 End If
 
@@ -313,34 +317,24 @@ Function ProjectForTgt(vbe, tgt)
 End Function
 
 
-' Pull a caption list out of M_Install.DiagToolbar's log, which is UTF-16.
-' Both sides of the comparison live in that one file:
-'    exp 1 caption=[...] proc=[M_Curves.ConvertAllToCurves]
-'    btn 1 caption=[...] tooltip=[...] err=0
-' The expected side is the macro's own CmdList(), so this check cannot drift
-' from the real button table, and there is no cross-encoding parsing left.
-' Fills a caller-supplied Dictionary, keyed 0..n-1 in file order.
-Sub FillCaptions(p, prefix, col)
-  Dim st2, txt, lines2, i, a, b, s
-
+' read a UTF-8 (no BOM) file.  WSH's OpenTextFile cannot decode UTF-8, and
+' the system default (ANSI) corrupts CJK: the trailing byte of a multi-byte
+' char pairs with the next LF.  ADODB.Stream handles the encoding properly.
+Function ReadUtf8(path)
+  Dim stm, s
+  s = ""
   On Error Resume Next
-  Set st2 = fso.OpenTextFile(p, 1, False, -1)
-  txt = st2.ReadAll
-  st2.Close
+  Err.Clear
+  Set stm = CreateObject("ADODB.Stream")
+  If Err.Number = 0 And Not stm Is Nothing Then
+    stm.Type = 2
+    stm.Charset = "utf-8"
+    stm.Open
+    stm.LoadFromFile path
+    s = stm.ReadText
+    stm.Close
+  End If
+  Err.Clear
   On Error GoTo 0
-
-  If Len(txt) = 0 Then Exit Sub
-
-  lines2 = Split(txt, vbLf)
-  For i = 0 To UBound(lines2)
-    s = lines2(i)
-    If Left(s, Len(prefix)) = prefix Then
-      a = InStr(s, "caption=[")
-      If a > 0 Then
-        a = a + 9
-        b = InStr(a, s, "]")
-        If b > a Then col.Add col.Count, Mid(s, a, b - a)
-      End If
-    End If
-  Next
-End Sub
+  ReadUtf8 = s
+End Function

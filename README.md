@@ -1,6 +1,6 @@
 # CDR X4 增强工具包（CDRX4Toolkit）
 
-> 面向 CorelDRAW X4 的 VBA 宏插件：把 9 个常用排版 / 输出功能做成工具栏按钮，双击单个 .vbs 即可安装，可自由分发。
+> 面向 CorelDRAW X4 的 VBA 宏插件：把 9 个常用排版 / 输出功能收进一个「增强工具」图标，点一下展开菜单，双击单个 .vbs 即可安装，可自由分发。
 
 ![VBA](https://img.shields.io/badge/-VBA-1470aa?logo=visualbasic&logoColor=white)
 ![CorelDRAW](https://img.shields.io/badge/-CorelDRAW-X4-000000)
@@ -9,7 +9,7 @@
 
 ## ✨ 项目简介
 
-CDRX4Toolkit 把 CorelDRAW 精简增强版里一批插件的常用功能，用 VBA 宏（GMS）独立重写，打包成双击即用的单个 `.vbs` 安装器。安装后 CorelDRAW 多出一条「增强工具」工具栏，9 个中文按钮打开即用、无需手动配置。全部源码开放，可自行修改、打包与分发。
+CDRX4Toolkit 把 CorelDRAW 精简增强版里一批插件的常用功能，用 VBA 宏（GMS）独立重写，打包成双击即用的单个 `.vbs` 安装器。安装后 CorelDRAW 多出一条「增强工具」工具栏，**就一个图标按钮，点一下展开 9 项中文菜单**，打开即用、无需手动配置。全部源码开放，可自行修改、打包与分发。
 
 ## 🚀 特性亮点
 
@@ -29,7 +29,7 @@ CDRX4Toolkit 把 CorelDRAW 精简增强版里一批插件的常用功能，用 V
 
 1. 先关闭 CorelDRAW X4（需已装 VBA 组件，按 `Alt+F11` 可打开 VBA 编辑器）
 2. 双击 `dist\安装CDRX4增强工具.vbs`
-3. 重新打开 CorelDRAW，「增强工具」工具栏出现，选中对象后点对应按钮即可
+3. 重新打开 CorelDRAW，「增强工具」工具栏出现，点一下展开菜单，选中对象后点对应项即可
 
 卸载：双击 `dist\卸载CDRX4增强工具.vbs`（同样需先关闭 CorelDRAW）。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -53,5 +53,6 @@ CDRX4Toolkit 把 CorelDRAW 精简增强版里一批插件的常用功能，用 V
 
 | 日期 | 修改内容 |
 | --- | --- |
+| 2026-10-08 | 工具栏改「一图标 + 展开菜单」；打磨转曲 / 转 CMYK / 颜色替换的对话框与边界逻辑（v1.3.0，详见 [CHANGELOG.md](CHANGELOG.md)） |
 | 2026-10-05 | README 精简为项目介绍，补充 topics 标签 |
 | 2026-10-05 | README 美化丰富：补充在线体验与参考来源，完善使用说明 |

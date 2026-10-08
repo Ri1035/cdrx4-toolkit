@@ -4,6 +4,67 @@
 
 ---
 
+## v1.3.0 — 2026-10-08
+
+**工具栏改「一图标 + 点击展开菜单」**：原来的 9 个平铺按钮收进 1 个「增强工具」按钮，点一下弹出 9 项 flyout 菜单；顺带把「转曲 / 转CMYK / 颜色替换」的对话框与边界逻辑重新打磨。卸载器同步补齐 flyout 清理。
+
+### 变更（工具栏）
+
+- **9 个平铺按钮 → 1 个展开按钮 + flyout 菜单**（`workspace_markup.txt`）。
+  主工具栏现在只有 1 个 `itemData`（展开按钮，`bmpCol=0 bmpRow=1031`，**不绑宏**，靠 `flyoutBarRef` 指向菜单栏）；
+  菜单栏是 `flyout="true"` 的 `commandBarData`，按原顺序放 9 个功能按钮。
+- **纯 XML 实现，不碰 `CommandBars` API**。`flyout` 结构就是 CorelDRAW 自己持久化的格式，
+  照写即可；自动化路线（`Delete`/`Add`/`AddCustomButton`）在 X4 上复现过崩溃（`CrlFrmWk.dll`，
+  `0xc0000005 → 0xc000041d`，留下 0 线程僵尸），继续回避。
+- 按钮名、顺序、9 条宏绑定**完全不变**，`M_Install.CmdList()` 仍是唯一清单来源（展开按钮不占条目）。
+
+### 修复（卸载器 · **必改项**）
+
+- **展开按钮漏删**。展开按钮没有 `dynamicCommand`，旧卸载器只按「宏名含 `CDRX4Toolkit`」和
+  「工具栏名叫增强工具」定位，会把它留成**点不动的死按钮**。
+  现在安装器与卸载器的 `StripToolkit()` 都增加一条：**`flyoutBarRef` 指向我方 flyout 栏 guid 的
+  `itemData` 一并删除**；并按移除的栏 guid 清掉对应的 `<commandBar>` 可见性条目。
+- 卸载后工作区里**主栏 / flyout 栏 / 10 个 itemData / lane 条目 / 9 条宏绑定全部清零**（双向验证通过）。
+
+### 变更（三个功能的对话框与操作逻辑）
+
+> 只动对话框语义与边界提示，纯逻辑函数（`*Core`）签名保持兼容。
+
+- **转曲**（`M_Curves.bas`）：范围选择从 `MsgBox(是/否/取消)` 改为 `InputBox` **编号选择**
+  （`1=文字+图形` / `2=只转文字` / `3=只转图形`），**「取消」= 放弃**。
+  旧做法把「取消」借来表示「仅图形」，用户得先读说明才敢点 —— 这是本轮修掉的主要可用性问题。
+  深度选择的「取消」也明确为放弃；新增 `n=0` 时的三条原因提示。
+- **转CMYK**（`M_CMYK.bas`）：对话框写清 `是=转CMYK并给纯黑加叠印` / `否=只转CMYK不动叠印` / `取消=不做`，
+  并**明确纯黑 = `C0 M0 Y0 K100`**；新增 `n=0` 提示。
+- **颜色替换**（`M_Color.bas`）：取色来源扩展为**优先纯色填充、无则退回轮廓色**；
+  新增**方向确认** `InputBox`（`1=按第1个为原色` / `2=反过来` / `取消=不做`）、**同色提示**、
+  **`n=0` 三条原因提示**；所有提示都带「原色 → 新色」。
+
+### 新增（验证工具）
+
+- `tools/verify_toolbar.ps1` —— 不启动 CorelDRAW，直接拿 `workspace_markup.txt` 校验工作区：
+  `-Expect present` 查「10 guid / 2 骨架 / flyout 标记 / 展开按钮接线 / 主栏只引用展开按钮 /
+  flyout 按序 9 项 / 可见性 / 9 条宏绑定」，`-Expect absent` 查全清；并交叉校验 GMS 按钮清单。
+- `tools/click_at.ps1` —— 自动点击 + 截图，实证「点展开按钮弹出菜单」。
+- `tools/capture_cdr.ps1` —— 枚举进程顶层窗口 + `PrintWindow` 抓图，主窗口被遮挡时也能截到工具栏。
+
+### 验证记录（本机，CorelDRAW X4）
+
+| 项 | 结果 |
+|---|---|
+| 编译 + 自检 `build_gms.vbs` | `BUILD OK`；`M_Test.SelfTest` 全 `err=0`，含 `1b scope text/shape/all` = **1 / 3 / 0**（与期望一致） |
+| 真实启动 `real_launch_test.ps1`（35 s） | 新增 Application Error **0**，进程 `Responding=True` → **LAUNCH PASS**（跑两次均 PASS） |
+| 装卸往返 · 卸载 | 两个工作区文件均 **VERIFY PASS (absent)**，展开按钮无残留 |
+| 装卸往返 · 安装 | **VERIFY PASS (present)**，flyout 接线与 9 条宏绑定全部正确 |
+| **持久性** | 真实启动 → 正常退出 CorelDRAW → 再验仍 **present**，证明 flyout 工具栏被正常持久化 |
+| 菜单展开 | 截图 `_our1_crop.png`：点「增强工具」展开 9 项菜单，图标与中文标题正常 |
+
+> **GMS 变了，已装旧版的设备需要重装** —— 双击一次 `dist\安装CDRX4增强工具.vbs` 即可。
+> 产物：`CDRX4Toolkit.gms` 166418 字节（SHA-256 `4B17BD79…AB740B`），
+> 安装器 252117 字节，卸载器 18037 字节，两个 `.vbs` 均纯 ASCII。
+
+---
+
 ## v1.2.0 — 2026-09-28
 
 **「全部转曲」拆出转曲范围**：同一颗按钮，点下去先问「转谁」，可以只转文字或只转图形。

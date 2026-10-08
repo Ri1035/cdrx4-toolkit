@@ -41,10 +41,10 @@ Const GMS_NAME = "CDRX4Toolkit.gms"
 Dim MSG_B64
 MSG_B64 = "" & _
 "5aKe5by65bel5YW3CuajgOa1i+WIsCBDb3JlbERSQVcg5q2j5Zyo6L+Q6KGM44CCXG5cbuivt+WFiOWujOWFqOWFs+mXreWug++8jOeEtuWQjuWGjeWPjOWHu+acrOaWh+S7tuOAglxuXG7lpoLmnpzlroPlt7Lnu4/ljaHmrbvlhbPkuI3mjonvvJrlhYjnlKjku7vliqHnrqHnkIblmajnu5PmnZ8gQ29yZWxEUlcuZXhl77yb5aaC5p6c5Lu75Yqh566h55CG5Zmo5Lmf57uT5p2f5LiN5LqG77yI6L+b56iL5Y+q5YmpIDAg5Liq57q/56iL55qE5YO15bC477yJ77yM6YeN5ZCv5LiA5qyh55S16ISR44CCXG5cbuWOn+WboO+8mkNvcmVsRFJBVyDpgIDlh7rml7bkvJrnlKjoh6rlt7HnmoTorr7nva7opobnm5blt6XkvZzljLrmlofku7bvvIzovrnov5DooYzovrnmlLnk" & _
-"vJrooqvlhrLmjonjgIIK5Y246L295a6M5oiQ44CCXG5cbntMSVNUfVxuXG7njrDlnKjmiZPlvIAgQ29yZWxEUkFX77yM44CMe1RCfeOAjeW3peWFt+agj+W6lOivpeW3sue7j+a2iOWkseS6huOAglxu5aaC5p6c5a6D6L+Y5Zyo77yM5Y+z6ZSu6K+l5bel5YW35qCPIOKGkiDliKDpmaTljbPlj6/vvIjmrovnlZnmjInpkq7ngrnkuI3liqjmmK/mraPluLjnmoTvvIzmj5Lku7bmnKzkvZPlt7Lnu4/liKDmjonvvInjgIJcblxu5oOz6KOF5L+u5aSN5ZCO55qE5paw54mI5pys77yIdjEuMC4z77yJ77yM5Y+M5Ye744CM5a6J6KOFQ0RSWDTlop7lvLrlt6XlhbcudmJz44CN5Y2z5Y+v44CCCuayoeaJvuWIsOW3suWuieijheeahOaPkuS7tuOAglxuXG7ov5nkuKrorr7l" & _
-"pIfkuIrlj6/og73mnKzmnaXlsLHmsqHoo4XvvIzmiJbogIXlt7Lnu4/liKDov4fkuobjgIJcbuWmguaenCBDb3JlbERSQVcg6YeM6L+Y5pyJ44CMe1RCfeOAjeW3peWFt+agj++8jOWPs+mUruWugyDihpIg5Yig6Zmk5Y2z5Y+v44CCCuayoeaJvuWIsCBDb3JlbERSQVcg55qE5bel5L2c5Yy655uu5b2V77yM5Y+q5aSE55CG5LqG5o+S5Lu25pys5L2T44CCClvmiJDlip9dClvlpLHotKVdCuW3peS9nOWMug=="
+"vJrooqvlhrLmjonjgIIK5Y246L295a6M5oiQ44CCXG5cbntMSVNUfVxuXG7njrDlnKjmiZPlvIAgQ29yZWxEUkFX77yM44CMe1RCfeOAjeW3peWFt+agj+W6lOivpeW3sue7j+a2iOWkseS6huOAglxu5aaC5p6c5a6D6L+Y5Zyo77yM5Y+z6ZSu6K+l5bel5YW35qCPIOKGkiDliKDpmaTljbPlj6/vvIjmrovnlZnmjInpkq7ngrnkuI3liqjmmK/mraPluLjnmoTvvIzmj5Lku7bmnKzkvZPlt7Lnu4/liKDmjonvvInjgIJcblxu5oOz6KOF5pyA5paw54mI77yIdjEuMy4w77yJ77yM5Y+M5Ye744CM5a6J6KOFQ0RSWDTlop7lvLrlt6XlhbcudmJz44CN5Y2z5Y+v44CCCuayoeaJvuWIsOW3suWuieijheeahOaPkuS7tuOAglxuXG7ov5nkuKrorr7lpIfkuIrlj6/og73m" & _
+"nKzmnaXlsLHmsqHoo4XvvIzmiJbogIXlt7Lnu4/liKDov4fkuobjgIJcbuWmguaenCBDb3JlbERSQVcg6YeM6L+Y5pyJ44CMe1RCfeOAjeW3peWFt+agj++8jOWPs+mUruWugyDihpIg5Yig6Zmk5Y2z5Y+v44CCCuayoeaJvuWIsCBDb3JlbERSQVcg55qE5bel5L2c5Yy655uu5b2V77yM5Y+q5aSE55CG5LqG5o+S5Lu25pys5L2T44CCClvmiJDlip9dClvlpLHotKVdCuW3peS9nOWMugrlop7lvLrlt6Xlhbfoj5zljZU="
 
-Dim M, gFso, gSh, gBar, gList(200), gN
+Dim M, gFso, gSh, gBar, gMenu, gList(200), gN
 
 Call Main()
 
@@ -56,6 +56,7 @@ Sub Main()
     Set gSh  = CreateObject("WScript.Shell")
     LoadMessages
     gBar = M(0)
+    gMenu = M(8)
     gN = 0
 
     ' CorelDRAW would overwrite the workspace file on exit, so there
@@ -163,18 +164,25 @@ End Function
 '------------------------------------------------------------
 ' Remove the toolbar a previous install left in the workspace.
 '
-' Three things have to go, and the guids are read out of the file
+' Four things have to go, and the guids are read out of the file
 ' rather than hard-coded, because the old build created the toolbar
 ' through the CommandBars API and CorelDRAW then assigned it a
 ' random guid:
 '
-'   1. the <itemData> button bindings - matched on the macro name,
-'      which is the one thing that is ours no matter who created
-'      the toolbar;
-'   2. the <commandBarData> skeleton - matched on any of those
-'      button guids, or on our toolbar name;
+'   1. the <commandBarData> skeletons - matched on any of our button
+'      guids, or on our toolbar name.  Both bars are covered: the
+'      visible bar carries the toolbar name, and the flyout bar
+'      (flyout="true", a name of its own) lists our nine buttons;
+'   2. the flyout opener - an <itemData> with NO dynamicCommand that
+'      only carries flyoutBarRef pointing at a bar removed in step 1.
+'      Matching on the macro name alone would leave it behind as a
+'      dead button, which is exactly what a v1.2.0 install upgrades
+'      into;
 '   3. the <commandBar guidRef=...> visibility entry for each
-'      skeleton removed in step 2.
+'      skeleton removed in step 1;
+'   4. the <itemData> button bindings - matched on the macro name,
+'      which is the one thing that is ours no matter who created the
+'      toolbar.
 '------------------------------------------------------------
 Function StripToolkit(xml)
     Dim out, re, ms, guids(60), ng, barGuids(60), nb
@@ -203,7 +211,7 @@ Function StripToolkit(xml)
         Next
     End If
 
-    ' the toolbar skeleton, and the guids of the ones we drop
+    ' the toolbar skeletons, and the guids of the ones we drop
     nb = 0
     i = 1
     Do While True
@@ -220,6 +228,10 @@ Function StripToolkit(xml)
         Next
         If InStr(1, block, "nonLocalizableName=""" & gBar & """", vbTextCompare) > 0 Then hit = True
         If InStr(1, block, "userCaption=""" & gBar & """", vbTextCompare) > 0 Then hit = True
+        If Len(gMenu) > 0 Then
+            If InStr(1, block, "nonLocalizableName=""" & gMenu & """", vbTextCompare) > 0 Then hit = True
+            If InStr(1, block, "userCaption=""" & gMenu & """", vbTextCompare) > 0 Then hit = True
+        End If
 
         If hit Then
             g = FirstAttr(block, "guid")
@@ -232,6 +244,12 @@ Function StripToolkit(xml)
             i = e + 1
         End If
     Loop
+
+    ' the flyout opener: an itemData with no dynamicCommand that points
+    ' at one of the flyout bars just removed
+    For g = 0 To nb - 1
+        out = ReReplace(out, "<itemData\s+[^>]*flyoutBarRef=""" & ReEsc(barGuids(g)) & """[^>]*/>", "")
+    Next
 
     ' the visibility entries for the toolbars just removed
     For g = 0 To nb - 1

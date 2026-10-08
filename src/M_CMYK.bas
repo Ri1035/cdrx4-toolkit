@@ -23,17 +23,24 @@ Public Sub ConvertToCMYK()
         Exit Sub
     End If
 
+    ' 两个选项 + 取消，语义各自独立，取消就是取消。
     ans = MsgBox("转 CMYK 选项：" & vbCrLf & vbCrLf & _
-                 "是 = 转 CMYK，并给纯黑加叠印" & vbCrLf & _
+                 "是 = 转 CMYK，并给纯黑（C0 M0 Y0 K100）加叠印" & vbCrLf & _
                  "否 = 只转 CMYK，不动叠印" & vbCrLf & _
-                 "取消 = 什么也不做", _
+                 "取消 = 什么都不做", _
                  vbYesNoCancel + vbQuestion, "转CMYK")
     If ans = vbCancel Then Exit Sub
     withBlack = (ans = vbYes)
 
     n = ConvertToCMYKCore(withBlack)
 
-    MsgBox "转 CMYK 完成，共处理 " & n & " 处颜色。", vbInformation, "转CMYK"
+    If n = 0 Then
+        MsgBox "没有可转换的颜色。" & vbCrLf & vbCrLf & _
+               "文档里的填充和轮廓可能本来就是 CMYK，或者是无填充 / 渐变 / 位图。", _
+               vbInformation, "转CMYK"
+    Else
+        MsgBox "转 CMYK 完成，共处理 " & n & " 处颜色。", vbInformation, "转CMYK"
+    End If
 End Sub
 
 ' 纯逻辑，供自检调用

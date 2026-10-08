@@ -285,17 +285,24 @@ Function ItemGuids(mark, arr)
 End Function
 
 
-' remove everything a previous install of ours left behind
+' remove everything a previous install of ours left behind.
+'
+' The current build puts TWO commandBarData blocks in the workspace: the
+' visible main bar (one item: the flyout opener) and the flyout bar itself
+' (the nine feature buttons, marked flyout="true").  The opener is an
+' <itemData> with NO dynamicCommand - it only carries flyoutBarRef - so
+' matching on the macro path alone would leave it behind as a dead button.
+' Hence the guid list and the flyoutBarRef sweep below.
 Function StripToolkit(xml, barGuid, barName, guids, ng)
-    Dim out, i, s, e, block, hit, g
+    Dim out, i, s, e, block, hit, g, barGuids(60), nb
 
     out = xml
+    nb = 0
 
-    ' 1. the visibility entry in <cmdBarLane>
-    out = ReReplace(out, "<commandBar\s+[^>]*guidRef=""" & ReEsc(barGuid) & """[^>]*/>", "")
-
-    ' 2. the toolbar skeleton.  Identify it by our bar guid, by our
-    '    toolbar name, or by any of our button guids
+    ' 1. every toolbar skeleton of ours.  The main bar is found by its own
+    '    guid or by our toolbar name; the flyout bar carries neither, so it
+    '    is found through the button guids it lists.  Guids of everything
+    '    removed are remembered for steps 2 and 4.
     i = 1
     Do While True
         s = InStr(i, out, "<commandBarData")
@@ -315,14 +322,35 @@ Function StripToolkit(xml, barGuid, barName, guids, ng)
         Next
 
         If hit Then
+            g = Attr(block, "guid")
+            If Len(g) > 0 And nb < 60 Then
+                barGuids(nb) = g
+                nb = nb + 1
+            End If
             out = Left(out, s - 1) & Mid(out, e + 1)
         Else
             i = e + 1
         End If
     Loop
 
-    ' 3. the button bindings
+    ' 2. the flyout opener - an itemData with no dynamicCommand that points
+    '    at one of the flyout bars just removed
+    For g = 0 To nb - 1
+        out = ReReplace(out, "<itemData\s+[^>]*flyoutBarRef=""" & ReEsc(barGuids(g)) & """[^>]*/>", "")
+    Next
+
+    ' 3. the button bindings: by guid (covers every button the markup
+    '    declares, opener included) and by macro path (covers a build from
+    '    before the guids were settled)
+    For g = 0 To ng - 1
+        out = ReReplace(out, "<itemData\s+[^>]*guid=""" & ReEsc(guids(g)) & """[^>]*/>", "")
+    Next
     out = ReReplace(out, "<itemData\s+[^>]*dynamicCommand=""CDRX4Toolkit\.[^""]*""[^>]*/>", "")
+
+    ' 4. the <cmdBarLane> visibility entries for every bar removed above
+    For g = 0 To nb - 1
+        out = ReReplace(out, "<commandBar\s+[^>]*guidRef=""" & ReEsc(barGuids(g)) & """[^>]*/>", "")
+    Next
 
     StripToolkit = out
 End Function
